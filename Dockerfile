@@ -104,6 +104,5 @@ RUN chmod +x ./scripts/*.sh
 # Expose ports
 EXPOSE 8080
 
-
 ENTRYPOINT ["./scripts/docker-entrypoint.sh"]
 CMD ["./WeKnora"]
