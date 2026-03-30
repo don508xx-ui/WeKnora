@@ -100,10 +100,8 @@ func NewRouter(params RouterParams) *gin.Engine {
 		))
 	}
 
-	// 前端静态文件（仅 Lite 版本内嵌前端）
-	if handler.Edition == "lite" {
-		serveFrontendStatic(r)
-	}
+	// 前端静态文件
+	serveFrontendStatic(r)
 
 	// IM 回调路由（在认证中间件之前注册，使用各平台自身的签名验证）
 	RegisterIMRoutes(r, params.IMHandler)
