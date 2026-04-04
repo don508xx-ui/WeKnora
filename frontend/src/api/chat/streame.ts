@@ -5,7 +5,6 @@ import i18n from '@/i18n';
 
 
 
-
 interface StreamOptions {
   // 请求方法 (默认POST)
   method?: 'GET' | 'POST'
