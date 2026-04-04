@@ -4,8 +4,8 @@ import i18n from '@/i18n'
 
 const t = (key: string) => i18n.global.t(key)
 
-// API基础URL - 生产环境使用相对路径，开发环境使用localhost
-const BASE_URL = import.meta.env.DEV ? "http://localhost:8080" : "";
+// API基础URL - 始终使用相对路径
+const BASE_URL = "";
 
 const instance = axios.create({
   baseURL: BASE_URL,
