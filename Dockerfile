@@ -94,6 +94,8 @@ COPY --from=builder /app/skills/preloaded ./skills/preloaded
 COPY --from=builder /app/skills/preloaded ./skills/_builtin
 COPY --from=builder /root/.duckdb /home/appuser/.duckdb
 COPY --from=builder /app/WeKnora .
+# 【关键】复制 web 目录（前端静态文件）
+COPY --from=builder /app/web ./web
 
 # Copy and make entrypoint script executable
 COPY --from=builder /app/scripts/docker-entrypoint.sh ./scripts/docker-entrypoint.sh
