@@ -5,8 +5,8 @@ import i18n from '@/i18n'
 
 const t = (key: string) => i18n.global.t(key)
 
-// API基础URL - 生产环境始终使用相对路径
-const BASE_URL = "";
+// API基础URL
+const BASE_URL = import.meta.env.VITE_IS_DOCKER ? "" : "http://localhost:8080";
 
 
 // 创建Axios实例
