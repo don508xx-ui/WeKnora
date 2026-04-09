@@ -53,13 +53,15 @@ type RouterParams struct {
 	InitializationHandler *handler.InitializationHandler
 	SystemHandler         *handler.SystemHandler
 	MCPServiceHandler     *handler.MCPServiceHandler
-	WebSearchHandler      *handler.WebSearchHandler
+	WebSearchHandler              *handler.WebSearchHandler
+	WebSearchProviderHandler      *handler.WebSearchProviderHandler
 	FAQHandler            *handler.FAQHandler
 	TagHandler            *handler.TagHandler
 	CustomAgentHandler    *handler.CustomAgentHandler
 	SkillHandler          *handler.SkillHandler
 	OrganizationHandler   *handler.OrganizationHandler
 	IMHandler             *handler.IMHandler
+	DataSourceHandler     *handler.DataSourceHandler
 }
 
 // NewRouter 创建新的路由
@@ -100,18 +102,13 @@ func NewRouter(params RouterParams) *gin.Engine {
 		))
 	}
 
-	// 前端静态文件
-	serveFrontendStatic(r)
+	// 前端静态文件（仅 Lite 版本内嵌前端）
+	if handler.Edition == "lite" {
+		serveFrontendStatic(r)
+	}
 
 	// IM 回调路由（在认证中间件之前注册，使用各平台自身的签名验证）
 	RegisterIMRoutes(r, params.IMHandler)
-
-	// 不需要认证的API路由
-	v1 := r.Group("/api/v1")
-	{
-		// 认证相关路由（不需要认证）
-		RegisterAuthRoutes(v1, params.AuthHandler)
-	}
 
 	// 认证中间件
 	r.Use(middleware.Auth(params.TenantService, params.UserService, params.Config))
@@ -123,27 +120,30 @@ func NewRouter(params RouterParams) *gin.Engine {
 	// r.Use(middleware.TracingMiddleware())
 
 	// 需要认证的API路由
-	authV1 := r.Group("/api/v1")
+	v1 := r.Group("/api/v1")
 	{
-		RegisterTenantRoutes(authV1, params.TenantHandler)
-		RegisterKnowledgeBaseRoutes(authV1, params.KBHandler)
-		RegisterKnowledgeTagRoutes(authV1, params.TagHandler)
-		RegisterKnowledgeRoutes(authV1, params.KnowledgeHandler)
-		RegisterFAQRoutes(authV1, params.FAQHandler)
-		RegisterChunkRoutes(authV1, params.ChunkHandler)
-		RegisterSessionRoutes(authV1, params.SessionHandler)
-		RegisterChatRoutes(authV1, params.SessionHandler)
-		RegisterMessageRoutes(authV1, params.MessageHandler)
-		RegisterModelRoutes(authV1, params.ModelHandler)
-		RegisterEvaluationRoutes(authV1, params.EvaluationHandler)
-		RegisterInitializationRoutes(authV1, params.InitializationHandler)
-		RegisterSystemRoutes(authV1, params.SystemHandler)
-		RegisterMCPServiceRoutes(authV1, params.MCPServiceHandler)
-		RegisterWebSearchRoutes(authV1, params.WebSearchHandler)
-		RegisterCustomAgentRoutes(authV1, params.CustomAgentHandler)
-		RegisterSkillRoutes(authV1, params.SkillHandler)
-		RegisterOrganizationRoutes(authV1, params.OrganizationHandler)
-		RegisterIMChannelRoutes(authV1, params.IMHandler)
+		RegisterAuthRoutes(v1, params.AuthHandler)
+		RegisterTenantRoutes(v1, params.TenantHandler)
+		RegisterKnowledgeBaseRoutes(v1, params.KBHandler)
+		RegisterKnowledgeTagRoutes(v1, params.TagHandler)
+		RegisterKnowledgeRoutes(v1, params.KnowledgeHandler)
+		RegisterFAQRoutes(v1, params.FAQHandler)
+		RegisterChunkRoutes(v1, params.ChunkHandler)
+		RegisterSessionRoutes(v1, params.SessionHandler)
+		RegisterChatRoutes(v1, params.SessionHandler)
+		RegisterMessageRoutes(v1, params.MessageHandler)
+		RegisterModelRoutes(v1, params.ModelHandler)
+		RegisterEvaluationRoutes(v1, params.EvaluationHandler)
+		RegisterInitializationRoutes(v1, params.InitializationHandler)
+		RegisterSystemRoutes(v1, params.SystemHandler)
+		RegisterMCPServiceRoutes(v1, params.MCPServiceHandler)
+		RegisterWebSearchRoutes(v1, params.WebSearchHandler)
+		RegisterWebSearchProviderRoutes(v1, params.WebSearchProviderHandler)
+		RegisterCustomAgentRoutes(v1, params.CustomAgentHandler)
+		RegisterSkillRoutes(v1, params.SkillHandler)
+		RegisterOrganizationRoutes(v1, params.OrganizationHandler)
+		RegisterIMChannelRoutes(v1, params.IMHandler)
+		RegisterDataSourceRoutes(v1, params.DataSourceHandler)
 	}
 
 	return r
@@ -397,6 +397,9 @@ func RegisterEvaluationRoutes(r *gin.RouterGroup, handler *handler.EvaluationHan
 func RegisterAuthRoutes(r *gin.RouterGroup, handler *handler.AuthHandler) {
 	r.POST("/auth/register", handler.Register)
 	r.POST("/auth/login", handler.Login)
+	r.GET("/auth/oidc/config", handler.GetOIDCConfig)
+	r.GET("/auth/oidc/url", handler.GetOIDCAuthorizationURL)
+	r.GET("/auth/oidc/callback", handler.OIDCRedirectCallback)
 	r.POST("/auth/refresh", handler.RefreshToken)
 	r.GET("/auth/validate", handler.ValidateToken)
 	r.POST("/auth/logout", handler.Logout)
@@ -422,6 +425,7 @@ func RegisterInitializationRoutes(r *gin.RouterGroup, handler *handler.Initializ
 	r.POST("/initialization/remote/check", handler.CheckRemoteModel)
 	r.POST("/initialization/embedding/test", handler.TestEmbeddingModel)
 	r.POST("/initialization/rerank/check", handler.CheckRerankModel)
+	r.POST("/initialization/asr/check", handler.CheckASRModel)
 	r.POST("/initialization/multimodal/test", handler.TestMultimodalFunction)
 
 	r.POST("/initialization/extract/text-relation", handler.ExtractTextRelations)
@@ -473,6 +477,25 @@ func RegisterWebSearchRoutes(r *gin.RouterGroup, webSearchHandler *handler.WebSe
 	{
 		// Get available providers
 		webSearch.GET("/providers", webSearchHandler.GetProviders)
+	}
+}
+
+// RegisterWebSearchProviderRoutes registers CRUD routes for web search provider configurations
+func RegisterWebSearchProviderRoutes(r *gin.RouterGroup, h *handler.WebSearchProviderHandler) {
+	providers := r.Group("/web-search-providers")
+	{
+		// List available provider types (metadata for UI forms)
+		providers.GET("/types", h.ListProviderTypes)
+		// Test with raw credentials (no persistence)
+		providers.POST("/test", h.TestProviderRaw)
+		// CRUD
+		providers.POST("", h.CreateProvider)
+		providers.GET("", h.ListProviders)
+		providers.GET("/:id", h.GetProvider)
+		providers.PUT("/:id", h.UpdateProvider)
+		providers.DELETE("/:id", h.DeleteProvider)
+		// Test existing saved provider
+		providers.POST("/:id/test", h.TestProviderByID)
 	}
 }
 
@@ -629,14 +652,14 @@ func serveFrontendStatic(r *gin.Engine) {
 	}
 	absDir, _ := filepath.Abs(webDir)
 	indexPath := filepath.Join(absDir, "index.html")
-	hasFrontend := false
-	if _, err := os.Stat(indexPath); err == nil {
-		hasFrontend = true
+	if _, err := os.Stat(indexPath); err != nil {
+		return
 	}
 
-	if hasFrontend {
-		logger.Infof(context.Background(), "[Router] Serving frontend static files from %s", absDir)
-	}
+	logger.Infof(context.Background(), "[Router] Serving frontend static files from %s", absDir)
+
+	fs := http.Dir(absDir)
+	fileServer := http.FileServer(fs)
 
 	r.Use(func(c *gin.Context) {
 		if c.Request.Method != http.MethodGet && c.Request.Method != http.MethodHead {
@@ -648,285 +671,14 @@ func serveFrontendStatic(r *gin.Engine) {
 			c.Next()
 			return
 		}
-		
-		// 如果有前端文件，尝试提供静态文件
-		if hasFrontend {
-			fs := http.Dir(absDir)
-			fileServer := http.FileServer(fs)
-			fullPath := filepath.Join(absDir, path)
-			if info, err := os.Stat(fullPath); err == nil && !info.IsDir() {
-				fileServer.ServeHTTP(c.Writer, c.Request)
-				c.Abort()
-				return
-			}
-			c.File(indexPath)
+		fullPath := filepath.Join(absDir, path)
+		if info, err := os.Stat(fullPath); err == nil && !info.IsDir() {
+			fileServer.ServeHTTP(c.Writer, c.Request)
 			c.Abort()
 			return
 		}
-		
-		// 如果没有前端文件，提供默认的注册页面
-		if path == "/" {
-			c.Header("Content-Type", "text/html; charset=utf-8")
-			c.String(http.StatusOK, `
-				<!DOCTYPE html>
-				<html lang="zh-CN">
-				<head>
-					<meta charset="UTF-8">
-					<meta name="viewport" content="width=device-width, initial-scale=1.0">
-					<title>WeKnora - 注册</title>
-					<style>
-						body {
-							font-family: Arial, sans-serif;
-							background-color: #f5f5f5;
-							margin: 0;
-							padding: 0;
-							display: flex;
-							justify-content: center;
-							align-items: center;
-							height: 100vh;
-						}
-						.container {
-							background-color: white;
-							padding: 40px;
-							border-radius: 8px;
-							box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
-							width: 400px;
-						}
-						h1 {
-							text-align: center;
-							color: #333;
-							margin-bottom: 30px;
-						}
-						.form-group {
-							margin-bottom: 20px;
-						}
-						label {
-							display: block;
-							margin-bottom: 8px;
-							color: #555;
-						}
-						input {
-							width: 100%;
-							padding: 10px;
-							border: 1px solid #ddd;
-							border-radius: 4px;
-							font-size: 16px;
-						}
-						button {
-							width: 100%;
-							padding: 12px;
-							background-color: #4CAF50;
-							color: white;
-							border: none;
-							border-radius: 4px;
-							font-size: 16px;
-							cursor: pointer;
-						}
-						button:hover {
-							background-color: #45a049;
-						}
-						.login-link {
-							text-align: center;
-							margin-top: 20px;
-						}
-						.login-link a {
-							color: #4CAF50;
-							text-decoration: none;
-						}
-						.login-link a:hover {
-							text-decoration: underline;
-						}
-						.error-message {
-							color: red;
-							margin-top: 10px;
-							text-align: center;
-						}
-					</style>
-				</head>
-				<body>
-					<div class="container">
-						<h1>WeKnora 注册</h1>
-						<form id="registerForm">
-							<div class="form-group">
-								<label for="username">用户名</label>
-								<input type="text" id="username" name="username" required>
-							</div>
-							<div class="form-group">
-								<label for="email">邮箱</label>
-								<input type="email" id="email" name="email" required>
-							</div>
-							<div class="form-group">
-								<label for="password">密码</label>
-								<input type="password" id="password" name="password" required>
-							</div>
-							<button type="submit">注册</button>
-							<div class="error-message" id="errorMessage"></div>
-							<div class="login-link">
-								已有账号？<a href="#" id="loginLink">登录</a>
-							</div>
-						</form>
-					</div>
-					<script>
-						// 注册表单提交
-						document.getElementById('registerForm').addEventListener('submit', async function(e) {
-							e.preventDefault();
-							const username = document.getElementById('username').value;
-							const email = document.getElementById('email').value;
-							const password = document.getElementById('password').value;
-							const errorMessage = document.getElementById('errorMessage');
-							
-							errorMessage.textContent = '';
-							
-							try {
-								const response = await fetch('/api/v1/auth/register', {
-									method: 'POST',
-									headers: {
-										'Content-Type': 'application/json'
-									},
-									body: JSON.stringify({ username, email, password })
-								});
-								
-								if (response.ok) {
-									const data = await response.json();
-									if (data.success) {
-										alert('注册成功！请登录');
-										// 切换到登录表单
-										switchToLogin();
-									}
-								} else {
-									const error = await response.json();
-									errorMessage.textContent = error.message || '注册失败，请稍后重试';
-								}
-							} catch (err) {
-								errorMessage.textContent = '网络错误，请稍后重试';
-							}
-						});
-						
-						// 切换到登录表单
-						document.getElementById('loginLink').addEventListener('click', function(e) {
-							e.preventDefault();
-							switchToLogin();
-						});
-						
-						function switchToLogin() {
-							document.querySelector('h1').textContent = 'WeKnora 登录';
-							document.getElementById('registerForm').id = 'loginForm';
-							document.querySelector('button[type="submit"]').textContent = '登录';
-							document.querySelector('.login-link').innerHTML = '没有账号？<a href="#" id="registerLink">注册</a>';
-							
-							// 移除注册表单的 username 字段
-							const usernameField = document.querySelector('.form-group:nth-child(1)');
-							if (usernameField) {
-								usernameField.style.display = 'none';
-							}
-							
-							// 绑定登录表单提交事件
-							document.getElementById('loginForm').addEventListener('submit', async function(e) {
-								e.preventDefault();
-								const email = document.getElementById('email').value;
-								const password = document.getElementById('password').value;
-								const errorMessage = document.getElementById('errorMessage');
-								
-								errorMessage.textContent = '';
-								
-								try {
-									const response = await fetch('/api/v1/auth/login', {
-										method: 'POST',
-										headers: {
-											'Content-Type': 'application/json'
-										},
-										body: JSON.stringify({ email, password })
-									});
-									
-									if (response.ok) {
-										const data = await response.json();
-										if (data.success && data.access_token) {
-											// 存储令牌
-											localStorage.setItem('access_token', data.access_token);
-											alert('登录成功！');
-											// 可以重定向到其他页面或显示成功消息
-										} else {
-											errorMessage.textContent = data.message || '登录失败';
-										}
-									} else {
-										const error = await response.json();
-										errorMessage.textContent = error.message || '登录失败，请稍后重试';
-									}
-								} catch (err) {
-									errorMessage.textContent = '网络错误，请稍后重试';
-								}
-							});
-							
-							// 绑定注册链接点击事件
-							document.getElementById('registerLink').addEventListener('click', function(e) {
-								e.preventDefault();
-								switchToRegister();
-							});
-						}
-						
-						function switchToRegister() {
-							document.querySelector('h1').textContent = 'WeKnora 注册';
-							document.getElementById('loginForm').id = 'registerForm';
-							document.querySelector('button[type="submit"]').textContent = '注册';
-							document.querySelector('.login-link').innerHTML = '已有账号？<a href="#" id="loginLink">登录</a>';
-							
-							// 显示注册表单的 username 字段
-							const usernameField = document.querySelector('.form-group:nth-child(1)');
-							if (usernameField) {
-								usernameField.style.display = 'block';
-							}
-							
-							// 绑定注册表单提交事件
-							document.getElementById('registerForm').addEventListener('submit', async function(e) {
-								e.preventDefault();
-								const username = document.getElementById('username').value;
-								const email = document.getElementById('email').value;
-								const password = document.getElementById('password').value;
-								const errorMessage = document.getElementById('errorMessage');
-								
-								errorMessage.textContent = '';
-								
-								try {
-									const response = await fetch('/api/v1/auth/register', {
-										method: 'POST',
-										headers: {
-											'Content-Type': 'application/json'
-										},
-										body: JSON.stringify({ username, email, password })
-									});
-									
-									if (response.ok) {
-										const data = await response.json();
-										if (data.success) {
-											alert('注册成功！请登录');
-											// 切换到登录表单
-											switchToLogin();
-										}
-									} else {
-										const error = await response.json();
-										errorMessage.textContent = error.message || '注册失败，请稍后重试';
-									}
-								} catch (err) {
-									errorMessage.textContent = '网络错误，请稍后重试';
-								}
-							});
-							
-							// 绑定登录链接点击事件
-							document.getElementById('loginLink').addEventListener('click', function(e) {
-								e.preventDefault();
-								switchToLogin();
-							});
-						}
-					</script>
-				</body>
-				</html>
-			`)
-			c.Abort()
-			return
-		}
-		
-		// 对于其他路径，继续处理
-		c.Next()
+		c.File(indexPath)
+		c.Abort()
 	})
 }
 
@@ -1011,4 +763,37 @@ func serveFiles(r *gin.Engine) {
 			logger.Warnf(context.Background(), "[Router] /files write response failed: %v", err)
 		}
 	})
+}
+
+// RegisterDataSourceRoutes 注册数据源相关的路由
+func RegisterDataSourceRoutes(r *gin.RouterGroup, handler *handler.DataSourceHandler) {
+	// Data source routes
+	ds := r.Group("/datasource")
+	{
+		// Get available connector types
+		ds.GET("/types", handler.GetAvailableConnectors)
+
+		// Validate credentials without persistence (for "Test Connection" button)
+		ds.POST("/validate-credentials", handler.ValidateCredentials)
+
+		// CRUD operations
+		ds.POST("", handler.CreateDataSource)
+		ds.GET("", handler.ListDataSources)
+		ds.GET("/:id", handler.GetDataSource)
+		ds.PUT("/:id", handler.UpdateDataSource)
+		ds.DELETE("/:id", handler.DeleteDataSource)
+
+		// Connection and resource management
+		ds.POST("/:id/validate", handler.ValidateConnection)
+		ds.GET("/:id/resources", handler.ListAvailableResources)
+
+		// Sync management
+		ds.POST("/:id/sync", handler.ManualSync)
+		ds.POST("/:id/pause", handler.PauseDataSource)
+		ds.POST("/:id/resume", handler.ResumeDataSource)
+
+		// Sync logs
+		ds.GET("/:id/logs", handler.GetSyncLogs)
+		ds.GET("/logs/:log_id", handler.GetSyncLog)
+	}
 }

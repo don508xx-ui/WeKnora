@@ -27,8 +27,6 @@ RUN go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate
 # Copy go mod and sum files
 COPY go.mod go.sum ./
 RUN --mount=type=cache,target=/go/pkg/mod go mod download
-COPY cmd/download cmd/download
-RUN go run cmd/download/duckdb/duckdb.go
 COPY . .
 
 # Get version and commit info for build injection

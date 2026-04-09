@@ -20,12 +20,7 @@ import (
 )
 
 var apiKeySecret = func() []byte {
-	key := []byte(os.Getenv("TENANT_AES_KEY"))
-	if len(key) != 32 {
-		// Fallback to default key if not set or invalid length
-		return []byte("weknorarag-api-key-secret-secret")
-	}
-	return key
+	return []byte(os.Getenv("TENANT_AES_KEY"))
 }
 
 // ListTenantsParams defines parameters for listing tenants with filtering and pagination
