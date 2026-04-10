@@ -17,7 +17,7 @@ import (
 func main() {
 	ctx := context.Background()
 
-	// Force rebuild: revert to simple Dockerfile 2026-04-11
+	// Force rebuild: rebuild frontend with 6-character password 2026-04-11
 	// Load configuration
 	cfg, err := config.LoadConfig()
 	if err != nil {
