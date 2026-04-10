@@ -43,8 +43,9 @@ ENV GO_VERSION=${GO_VERSION_ARG}
 
 # Build the application with version info
 RUN --mount=type=cache,target=/go/pkg/mod make build-prod
-RUN --mount=type=cache,target=/go/pkg/mod make download_spatial
+RUN --mount=type=cache,target=/go/pkg/mod go run cmd/download/duckdb/duckdb.go || true
 RUN --mount=type=cache,target=/go/pkg/mod cp -r /go/pkg/mod/github.com/yanyiwu/ /app/yanyiwu/
+RUN mkdir -p /root/.duckdb
 
 # Final stage
 FROM debian:12.12-slim
