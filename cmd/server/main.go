@@ -17,7 +17,7 @@ import (
 func main() {
 	ctx := context.Background()
 
-	// Force rebuild: auto build frontend in Dockerfile 2026-04-11
+	// Force rebuild: fix Node.js installation in Dockerfile 2026-04-11
 	// Load configuration
 	cfg, err := config.LoadConfig()
 	if err != nil {
