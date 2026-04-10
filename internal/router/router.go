@@ -110,6 +110,12 @@ func NewRouter(params RouterParams) *gin.Engine {
 	// IM 回调路由（在认证中间件之前注册，使用各平台自身的签名验证）
 	RegisterIMRoutes(r, params.IMHandler)
 
+	// 认证相关路由（不需要认证）
+	auth := r.Group("/api/v1")
+	{
+		RegisterAuthRoutes(auth, params.AuthHandler)
+	}
+
 	// 认证中间件
 	r.Use(middleware.Auth(params.TenantService, params.UserService, params.Config))
 
@@ -122,7 +128,6 @@ func NewRouter(params RouterParams) *gin.Engine {
 	// 需要认证的API路由
 	v1 := r.Group("/api/v1")
 	{
-		RegisterAuthRoutes(v1, params.AuthHandler)
 		RegisterTenantRoutes(v1, params.TenantHandler)
 		RegisterKnowledgeBaseRoutes(v1, params.KBHandler)
 		RegisterKnowledgeTagRoutes(v1, params.TagHandler)
