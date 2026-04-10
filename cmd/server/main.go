@@ -17,6 +17,7 @@ import (
 func main() {
 	ctx := context.Background()
 
+	// Force rebuild: auth routes fixed 2026-04-10
 	// Load configuration
 	cfg, err := config.LoadConfig()
 	if err != nil {
