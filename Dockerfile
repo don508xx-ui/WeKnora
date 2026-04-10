@@ -19,7 +19,11 @@ RUN if [ -n "$APK_MIRROR_ARG" ]; then \
         sed -i "s@deb.debian.org@${APK_MIRROR_ARG}@g" /etc/apt/sources.list.d/debian.sources; \
     fi && \
     apt-get update && \
-    apt-get install -y git build-essential libsqlite3-dev
+    apt-get install -y git build-essential libsqlite3-dev curl
+
+# Install Node.js and npm for frontend build
+RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
+    apt-get install -y nodejs
 
 # Install migrate tool
 RUN go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@latest
@@ -41,7 +45,13 @@ ENV COMMIT_ID=${COMMIT_ID_ARG}
 ENV BUILD_TIME=${BUILD_TIME_ARG}
 ENV GO_VERSION=${GO_VERSION_ARG}
 
+# Build frontend
+WORKDIR /app/frontend
+RUN npm install
+RUN npm run build
+
 # Build the application with version info
+WORKDIR /app
 RUN --mount=type=cache,target=/go/pkg/mod make build-prod
 RUN --mount=type=cache,target=/go/pkg/mod cp -r /go/pkg/mod/github.com/yanyiwu/ /app/yanyiwu/
 
@@ -91,8 +101,8 @@ COPY --from=builder /app/skills/preloaded ./skills/preloaded
 # Keep a read-only backup so bind-mount cannot erase built-in skills
 COPY --from=builder /app/skills/preloaded ./skills/_builtin
 COPY --from=builder /app/WeKnora .
-# 【关键】复制 web 目录（前端静态文件）- 从本地复制以使用最新构建
-COPY ./web ./web
+# 【关键】复制 web 目录（前端静态文件）- 从 builder 阶段复制自动构建的前端
+COPY --from=builder /app/frontend/dist ./web
 
 # Copy and make entrypoint script executable
 COPY --from=builder /app/scripts/docker-entrypoint.sh ./scripts/docker-entrypoint.sh
