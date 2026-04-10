@@ -10,7 +10,7 @@ import (
 	"github.com/Tencent/WeKnora/internal/config"
 	"github.com/Tencent/WeKnora/internal/container"
 	"github.com/Tencent/WeKnora/internal/logger"
-	"github.com/Tencent/WeKnora/internal/router"
+	"github.com/gin-gonic/gin"
 	"go.uber.org/dig"
 )
 
@@ -29,9 +29,9 @@ func main() {
 	container.BuildContainer(diContainer)
 
 	// Initialize router and start server
-	var r *router.Router
-	err = diContainer.Invoke(func(router *router.Router) {
-		r = router
+	var engine *gin.Engine
+	err = diContainer.Invoke(func(r *gin.Engine) {
+		engine = r
 	})
 	if err != nil {
 		fmt.Printf("Failed to get router: %v\n", err)
@@ -41,11 +41,12 @@ func main() {
 	// Start server in a goroutine
 	go func() {
 		port := cfg.Server.Port
-		if port == "" {
-			port = "8080"
+		if port <= 0 {
+			port = 8080
 		}
-		logger.Infof(ctx, "Starting server on port %s", port)
-		if err := r.Run(":" + port); err != nil {
+		addr := fmt.Sprintf(":%d", port)
+		logger.Infof(ctx, "Starting server on port %d", port)
+		if err := engine.Run(addr); err != nil {
 			logger.Errorf(ctx, "Failed to run server: %v", err)
 			os.Exit(1)
 		}
