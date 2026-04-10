@@ -1,3 +1,107 @@
+[33mcommit c419ceac05f011926accfab2bda0cb399958e153[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmaster[m[33m)[m
+Author: don508xx-ui <don508xx@Gmail.com>
+Date:   Mon Apr 6 00:35:40 2026 +0800
+
+    fix: fix frontend build failure and use relative path in production
+
+ frontend/dist/assets/AgentAvatar-BPkYsQTU.js       |   1 [31m-[m
+ frontend/dist/assets/AgentAvatar-ChfeDAWx.js       |   1 [32m+[m
+ ...AgentList-BEJF8pbP.js => AgentList-vF2D5HAQ.js} |   4 [32m+[m[31m-[m
+ ...eBase-BktgvP9d.js => KnowledgeBase-B9ttAjsK.js} |   8 [32m+[m[31m-[m
+ ...P3p.js => KnowledgeBaseEditorModal-C1J0HxD5.js} |   6 [32m+[m[31m-[m
+ frontend/dist/assets/KnowledgeBaseList-CE7M0qWY.js |   1 [31m-[m
+ frontend/dist/assets/KnowledgeBaseList-t8ZMhDjm.js |   1 [32m+[m
+ frontend/dist/assets/KnowledgeSearch-6SIaim9L.js   |   1 [32m+[m
+ frontend/dist/assets/KnowledgeSearch-BWZuPn64.js   |   1 [31m-[m
+ ...ar-CP4X-nP8.js => ListSpaceSidebar-DwySnG1T.js} |   2 [32m+[m[31m-[m
+ frontend/dist/assets/Login-DnVansL3.js             |   1 [31m-[m
+ frontend/dist/assets/Login-z8TdydqY.js             |   1 [32m+[m
+ frontend/dist/assets/ModelSelector-IHpzASde.js     |   1 [32m+[m
+ frontend/dist/assets/ModelSelector-nEgsuviN.js     |   1 [31m-[m
+ frontend/dist/assets/OrganizationList-BmrxyE-o.js  |   1 [32m+[m
+ frontend/dist/assets/OrganizationList-ROU0Ll6m.js  |   1 [31m-[m
+ frontend/dist/assets/Settings-CruecT6t.js          |   1 [31m-[m
+ frontend/dist/assets/Settings-G8AFJBrC.js          |   1 [32m+[m
+ ...eAvatar-Bh-uJR3L.js => SpaceAvatar-Cxzup-vR.js} |   2 [32m+[m[31m-[m
+ .../assets/{arc-Clc9LaUL.js => arc-CiBM_E3m.js}    |   2 [32m+[m[31m-[m
+ ...js => architectureDiagram-VXUJARFQ-BPC1JwSe.js} |   2 [32m+[m[31m-[m
+ ...58i0Wj.js => blockDiagram-VD42YOAC-BHl_m9b_.js} |   2 [32m+[m[31m-[m
+ ...-C3D8Imlm.js => c4Diagram-YG6GDRKO-11UUqBLD.js} |   2 [32m+[m[31m-[m
+ frontend/dist/assets/channel-D48hW_W0.js           |   1 [31m-[m
+ frontend/dist/assets/channel-w_CqaPfI.js           |   1 [32m+[m
+ ...istory-Uu5gjVGW.js => chat-history-CrKlrUA5.js} |   2 [32m+[m[31m-[m
+ ...VUAB-BIm9XrjR.js => chunk-4BX2VUAB-BKCz653W.js} |   2 [32m+[m[31m-[m
+ ...CEB6-CqMOahMp.js => chunk-55IACEB6-OtL_L8Fk.js} |   2 [32m+[m[31m-[m
+ ...7PRW-CVONhm1A.js => chunk-B4BG7PRW-os4AnnSE.js} |   2 [32m+[m[31m-[m
+ ...MBZ5-CJzcuNOp.js => chunk-DI55MBZ5-DXEGFwkS.js} |   2 [32m+[m[31m-[m
+ ...7UC4-s_pldROr.js => chunk-FMBD7UC4-DNebtD1w.js} |   2 [32m+[m[31m-[m
+ ...PNHL-Bz-c1OEr.js => chunk-QN33PNHL-BCoBL0dh.js} |   2 [32m+[m[31m-[m
+ ...N3VN-DVFb4R0w.js => chunk-QZHKN3VN-DTKF867n.js} |   2 [32m+[m[31m-[m
+ ...LE5B-oN4eVoZ_.js => chunk-TZMSLE5B-xWVYxqaW.js} |   2 [32m+[m[31m-[m
+ .../dist/assets/classDiagram-2ON5EDUG-B5weOSE6.js  |   1 [31m-[m
+ .../dist/assets/classDiagram-2ON5EDUG-DtMhvJJC.js  |   1 [32m+[m
+ .../assets/classDiagram-v2-WZHVMYZB-B5weOSE6.js    |   1 [31m-[m
+ .../assets/classDiagram-v2-WZHVMYZB-DtMhvJJC.js    |   1 [32m+[m
+ frontend/dist/assets/clone-BPCVHSl7.js             |   1 [31m-[m
+ frontend/dist/assets/clone-D0wwVUqn.js             |   1 [32m+[m
+ ...TKSEbd.js => cose-bilkent-S5V4N54A-DCgP35Jk.js} |   2 [32m+[m[31m-[m
+ frontend/dist/assets/creatChat-BnsSf5jd.js         |   1 [32m+[m
+ frontend/dist/assets/creatChat-Cfss2KLp.js         |   1 [31m-[m
+ ...VRFP-Cz8tXMsJ.js => dagre-6UL2VRFP-wUSJhqni.js} |   2 [32m+[m[31m-[m
+ ...XK-CHmPkcOz.js => diagram-PSM6KHXK-C3Wm2H8Z.js} |   2 [32m+[m[31m-[m
+ ...5R-Cqu81DZO.js => diagram-QEK2KX5R-BFCVCdnj.js} |   2 [32m+[m[31m-[m
+ ...OG-Dqo03o_4.js => diagram-S2PKOQOG-Dpcd76Gp.js} |   2 [32m+[m[31m-[m
+ ...review-BynIADcu.js => docx-preview-si8DJqwF.js} |   2 [32m+[m[31m-[m
+ ...-B2DeXI4H.js => erDiagram-Q2GNP2WA-ki4m2zgU.js} |   2 [32m+[m[31m-[m
+ ...yQ34efP.js => flowDiagram-NV44I4VS-_wuv7y6f.js} |   2 [32m+[m[31m-[m
+ ...y2uziU.js => ganttDiagram-JELNMOA3-B82SEPCg.js} |   2 [32m+[m[31m-[m
+ ...81d.js => gitGraphDiagram-V2S2FVAM-BA3mqI1I.js} |   2 [32m+[m[31m-[m
+ .../{graph-D4thajEg.js => graph-_-2oQzhH.js}       |   2 [32m+[m[31m-[m
+ frontend/dist/assets/has-D_U7h70t.js               |   1 [32m+[m
+ frontend/dist/assets/has-SGEnzor8.js               |   1 [31m-[m
+ frontend/dist/assets/index-BBun6C7X.js             |   1 [31m-[m
+ .../{index-CgPZmBXr.js => index-BkIZGks2.js}       |   2 [32m+[m[31m-[m
+ frontend/dist/assets/index-CC6Axvib.js             |   1 [32m+[m
+ frontend/dist/assets/index-CJ0j-6Vs.js             |   9 [31m-[m
+ .../{index-ChTIH8A6.js => index-CUzVRhdX.js}       |   2 [32m+[m[31m-[m
+ .../{index-Dfpav5kj.js => index-CeFljJx5.js}       |  96 [32m++++[m[31m-----[m
+ .../{index-Ct2_TQKH.js => index-DH5nAR55.js}       |   2 [32m+[m[31m-[m
+ frontend/dist/assets/index-DX9-AkFr.js             |   1 [31m-[m
+ .../{index-D1RoJzzd.js => index-Zf_WV8HU.js}       |   2 [32m+[m[31m-[m
+ frontend/dist/assets/index-xxyYbrXM.js             |   9 [32m+[m
+ ...P7e4JAM.js => infoDiagram-HS3SLOUP-Ln8wNUQ8.js} |   2 [32m+[m[31m-[m
+ ...mCMA.js => journeyDiagram-XKPGCS4Q-DXEJn-sh.js} |   2 [32m+[m[31m-[m
+ ...1.js => kanban-definition-3W4ZIXB7-BAYtGZti.js} |   2 [32m+[m[31m-[m
+ .../{layout-Dxj1s17D.js => layout-CdNWbz2C.js}     |   2 [32m+[m[31m-[m
+ .../{linear-DLfkrZlW.js => linear-BnmRt8fW.js}     |   2 [32m+[m[31m-[m
+ .../assets/{menu-DO3imJMl.js => menu-28BvXRMK.js}  |   2 [32m+[m[31m-[m
+ ...iewer-DyDx4BpP.js => mermaidViewer-NXb_1dhD.js} |   8 [32m+[m[31m-[m
+ ....js => mindmap-definition-VGOIOE7T-C-7AaJ82.js} |   2 [32m+[m[31m-[m
+ ...zation-NiStiiHa.js => organization-DtMYgMv9.js} |   2 [32m+[m[31m-[m
+ ...sSymjPLB.js => pieDiagram-ADFJNKIX-BG-F8-3Y.js} |   2 [32m+[m[31m-[m
+ ...-ac.js => quadrantDiagram-AYHSOK5B-CrCm27cQ.js} |   2 [32m+[m[31m-[m
+ frontend/dist/assets/reduce-CP-hRBLn.js            |   1 [32m+[m
+ frontend/dist/assets/reduce-WMI8z2G6.js            |   1 [31m-[m
+ ....js => requirementDiagram-UZGBJVZJ-BNJmmM4W.js} |   2 [32m+[m[31m-[m
+ ...wSbXO.js => sankeyDiagram-TZEHDZUN-DOvTagLX.js} |   2 [32m+[m[31m-[m
+ ...7QV.js => sequenceDiagram-WL72ISMW-DfX5gWQC.js} |   2 [32m+[m[31m-[m
+ .../{settings-BhgU2dyw.js => settings-TPIVVp3q.js} |   2 [32m+[m[31m-[m
+ ...-bjKVW.js => stateDiagram-FKZM4ZOC-CfJby_de.js} |   2 [32m+[m[31m-[m
+ .../assets/stateDiagram-v2-4FDKWEC3-BHUiBGgQ.js    |   1 [31m-[m
+ .../assets/stateDiagram-v2-4FDKWEC3-DpjeT94b.js    |   1 [32m+[m
+ .../{style-DuiXZ_V-.css => style-B-T-0mjU.css}     |   2 [32m+[m[31m-[m
+ ...js => timeline-definition-IT6M3QCI-CapHPjEG.js} |   2 [32m+[m[31m-[m
+ ...PO-rZvQaJmY.js => treemap-GDKQZRPO-DtRocRIS.js} |   2 [32m+[m[31m-[m
+ frontend/dist/assets/useKnowledgeBase-BhS07j6L.js  |   1 [32m+[m
+ frontend/dist/assets/useKnowledgeBase-xPTbktDi.js  |   1 [31m-[m
+ .../useKnowledgeBaseCreationNavigation-B1qUeglq.js |   1 [31m-[m
+ .../useKnowledgeBaseCreationNavigation-Be64dYZV.js |   1 [32m+[m
+ ...5JfZVu8o.js => web-search-provider-BRYK863x.js} |   2 [32m+[m[31m-[m
+ ...I4nV.js => xychartDiagram-PRI3JC2R-4e4JY40F.js} |   2 [32m+[m[31m-[m
+ frontend/dist/index.html                           |   4 [32m+[m[31m-[m
+ frontend/src/utils/request.ts                      | 216 [32m+++++++++++++++++++[m[31m--[m
+ frontend/src/views/auth/Login.vue                  |   4 [32m+[m[31m-[m
+ 97 files changed, 340 insertions(+), 161 deletions(-)
 
                    SSUUMMMMAARRYY OOFF LLEESSSS CCOOMMMMAANNDDSS
 
@@ -325,187 +429,3 @@
  TAB ...................................... Complete filename & cycle.
  SHIFT-TAB ...................... ESC-TAB   Complete filename & reverse cycle.
  ctrl-L ................................... Complete filename, list all.
-tateDiagram-FKZM4ZOC-CfJby_de.js} |   2 [32m+[m[31m-[m
- .../assets/stateDiagram-v2-4FDKWEC3-BHUiBGgQ.js    |   1 [31m-[m
- .../assets/stateDiagram-v2-4FDKWEC3-DpjeT94b.js    |   1 [32m+[m
- .../{style-DuiXZ_V-.css => style-B-T-0mjU.css}     |   2 [32m+[m[31m-[m
- ...js => timeline-definition-IT6M3QCI-CapHPjEG.js} |   2 [32m+[m[31m-[m
- ...PO-rZvQaJmY.js => treemap-GDKQZRPO-DtRocRIS.js} |   2 [32m+[m[31m-[m
- frontend/dist/assets/useKnowledgeBase-BhS07j6L.js  |   1 [32m+[m
- frontend/dist/assets/useKnowledgeBase-xPTbktDi.js  |   1 [31m-[m
- .../useKnowledgeBaseCreationNavigation-B1qUeglq.js |   1 [31m-[m
- .../useKnowledgeBaseCreationNavigation-Be64dYZV.js |   1 [32m+[m
- ...5JfZVu8o.js => web-search-provider-BRYK863x.js} |   2 [32m+[m[31m-[m
- ...I4nV.js => xychartDiagram-PRI3JC2R-4e4JY40F.js} |   2 [32m+[m[31m-[m
- frontend/dist/index.html                           |   4 [32m+[m[31m-[m
- frontend/src/utils/request.ts                      | 216 [32m+++++++++++++++++++[m[31m--[m
- frontend/src/views/auth/Login.vue                  |   4 [32m+[m[31m-[m
- 97 files changed, 340 insertions(+), 161 deletions(-)
-[33m57f217b[m Fix password min length
- .gitignore                                         |    44 [32m+[m
- WeKnora-office/.env.example                        |   345 [32m+[m
- WeKnora-office/.gitignore                          |    46 [32m+[m
- WeKnora-office/CHANGELOG.md                        |   871 [32m++[m
- WeKnora-office/LICENSE                             |  3259 [32m+++++[m
- WeKnora-office/Makefile                            |   288 [32m+[m
- WeKnora-office/README.md                           |   430 [32m+[m
- WeKnora-office/README_CN.md                        |   445 [32m+[m
- WeKnora-office/README_JA.md                        |   437 [32m+[m
- WeKnora-office/README_KO.md                        |   445 [32m+[m
- WeKnora-office/SECURITY.md                         |    46 [32m+[m
- WeKnora-office/VERSION                             |     1 [32m+[m
- WeKnora-office/client/README.md                    |   341 [32m+[m
- WeKnora-office/client/README_EN.md                 |   184 [32m+[m
- WeKnora-office/client/agent.go                     |   178 [32m+[m
- WeKnora-office/client/agent_manage.go              |   264 [32m+[m
- WeKnora-office/client/chunk.go                     |   211 [32m+[m
- WeKnora-office/client/client.go                    |   104 [32m+[m
- WeKnora-office/client/evaluation.go                |   113 [32m+[m
- WeKnora-office/client/example.go                   |   254 [32m+[m
- WeKnora-office/client/faq.go                       |   468 [32m+[m
- WeKnora-office/client/go.mod                       |     3 [32m+[m
- WeKnora-office/client/go.sum                       |     0
- WeKnora-office/client/initialization.go            |   255 [32m+[m
- WeKnora-office/client/knowledge.go                 |   619 [32m+[m
- WeKnora-office/client/knowledgebase.go             |   422 [32m+[m
- WeKnora-office/client/mcp_service.go               |   207 [32m+[m
- WeKnora-office/client/message.go                   |   191 [32m+[m
- WeKnora-office/client/model.go                     |   193 [32m+[m
- WeKnora-office/client/organization.go              |   643 [32m+[m
- WeKnora-office/client/session.go                   |   477 [32m+[m
- WeKnora-office/client/skill.go                     |    34 [32m+[m
- WeKnora-office/client/system.go                    |   174 [32m+[m
- WeKnora-office/client/tag.go                       |   187 [32m+[m
- WeKnora-office/client/tenant.go                    |   230 [32m+[m
- WeKnora-office/client/web_search.go                |    32 [32m+[m
- WeKnora-office/cmd/download/duckdb/duckdb.go       |    34 [32m+[m
- WeKnora-office/config/builtin_agents.yaml          |   142 [32m+[m
- WeKnora-office/config/config.yaml                  |   112 [32m+[m
- .../prompt_templates/agent_system_prompt.yaml      |   222 [32m+[m
- .../config/prompt_templates/context_template.yaml  |   106 [32m+[m
- .../config/prompt_templates/fallback.yaml          |   130 [32m+[m
- .../prompt_templates/generate_questions.yaml       |    42 [32m+[m
- .../prompt_templates/generate_session_title.yaml   |    14 [32m+[m
- .../config/prompt_templates/generate_summary.yaml  |    38 [32m+[m
- .../config/prompt_templates/graph_extraction.yaml  |   232 [32m+[m
- .../config/prompt_templates/intent_prompts.yaml    |   144 [32m+[m
- .../prompt_templates/keywords_extraction.yaml      |    51 [32m+[m
- .../config/prompt_templates/rewrite.yaml           |   187 [32m+[m
- .../config/prompt_templates/system_prompt.yaml     |   200 [32m+[m
- WeKnora-office/dataset/README                      |   273 [32m+[m
- WeKnora-office/dataset/README_zh.md                |   284 [32m+[m
- WeKnora-office/dataset/qa_dataset.py               |   381 [32m+[m
- WeKnora-office/dataset/samples/answers.parquet     |   Bin [31m0[m -> [32m1949[m bytes
- WeKnora-office/dataset/samples/corpus.parquet      |   Bin [31m0[m -> [32m3902[m bytes
- WeKnora-office/dataset/samples/qas.parquet         |   Bin [31m0[m -> [32m1585[m bytes
- WeKnora-office/dataset/samples/qrels.parquet       |   Bin [31m0[m -> [32m2067[m bytes
- WeKnora-office/dataset/samples/queries.parquet     |   Bin [31m0[m -> [32m1677[m bytes
- WeKnora-office/docker-compose.dev.yml              |   214 [32m+[m
- WeKnora-office/docker-compose.yml                  |   368 [32m+[m
- WeKnora-office/docker/Dockerfile.app               |   109 [32m+[m
- WeKnora-office/docker/Dockerfile.docreader         |   134 [32m+[m
- WeKnora-office/docker/Dockerfile.sandbox           |    30 [32m+[m
- WeKnora-office/docker/config/supervisord.conf      |    31 [32m+[m
- WeKnora-office/docreader/Makefile                  |    23 [32m+[m
- WeKnora-office/docreader/README.md                 |   227 [32m+[m
- WeKnora-office/docreader/client/client.go          |   103 [32m+[m
- WeKnora-office/docreader/client/client_test.go     |    85 [32m+[m
- WeKnora-office/docreader/config.py                 |   121 [32m+[m
- WeKnora-office/docreader/main.py                   |   214 [32m+[m
- WeKnora-office/docreader/models/__init__.py        |     0
- WeKnora-office/docreader/models/document.py        |    87 [32m+[m
- WeKnora-office/docreader/models/read_config.py     |    17 [32m+[m
- WeKnora-office/docreader/ocr/__init__.py           |    37 [32m+[m
- WeKnora-office/docreader/ocr/base.py               |    31 [32m+[m
- WeKnora-office/docreader/ocr/paddle.py             |   175 [32m+[m
- WeKnora-office/docreader/ocr/vlm.py                |    87 [32m+[m
- WeKnora-office/docreader/parser/__init__.py        |    38 [32m+[m
- WeKnora-office/docreader/parser/base_parser.py     |    61 [32m+[m
- WeKnora-office/docreader/parser/chain_parser.py    |   179 [32m+[m
- WeKnora-office/docreader/parser/doc_parser.py      |   331 [32m+[m
- WeKnora-office/docreader/parser/docx2_parser.py    |    28 [32m+[m
- WeKnora-office/docreader/parser/docx_parser.py     |  1532 [32m+++[m
- WeKnora-office/docreader/parser/excel_parser.py    |   119 [32m+[m
- WeKnora-office/docreader/parser/image_parser.py    |    28 [32m+[m
- WeKnora-office/docreader/parser/markdown_parser.py |   405 [32m+[m
- .../docreader/parser/markitdown_parser.py          |    46 [32m+[m
- WeKnora-office/docreader/parser/parser.py          |    82 [32m+[m
- WeKnora-office/docreader/parser/pdf_parser.py      |    15 [32m+[m
- WeKnora-office/docreader/parser/registry.py        |   160 [32m+[m
- WeKnora-office/docreader/parser/storage.py         |   322 [32m+[m
- WeKnora-office/docreader/parser/web_parser.py      |   171 [32m+[m
- WeKnora-office/docreader/proto/docreader.pb.go     |   607 [32m+[m
- WeKnora-office/docreader/proto/docreader.proto     |    61 [32m+[m
- .../docreader/proto/docreader_grpc.pb.go           |   159 [32m+[m
- WeKnora-office/docreader/proto/docreader_pb2.py    |    63 [32m+[m
- WeKnora-office/docreader/proto/docreader_pb2.pyi   |   108 [32m+[m
- .../docreader/proto/docreader_pb2_grpc.py          |   140 [32m+[m
- WeKnora-office/docreader/pyproject.toml            |    38 [32m+[m
- WeKnora-office/docreader/scripts/download_deps.py  |    70 [32m+[m
- WeKnora-office/docreader/scripts/generate_proto.sh |    36 [32m+[m
- WeKnora-office/docreader/splitter/header_hook.py   |   112 [32m+[m
- WeKnora-office/docreader/splitter/splitter.py      |   584 [32m+[m
- .../docreader/testdata/images/test_text.png        |   Bin [31m0[m -> [32m1823[m bytes
- WeKnora-office/docreader/testdata/test.html        |    56 [32m+[m
- WeKnora-office/docreader/testdata/test.md          |    37 [32m+[m
- WeKnora-office/docreader/testdata/test.txt         |    16 [32m+[m
- .../docreader/testdata/test_download.txt           |    19 [32m+[m
- WeKnora-office/docreader/utils/__init__.py         |    83 [32m+[m
- WeKnora-office/docreader/utils/endecode.py         |   204 [32m+[m
- WeKnora-office/docreader/utils/request.py          |   149 [32m+[m
- WeKnora-office/docreader/utils/split.py            |    80 [32m+[m
- WeKnora-office/docreader/utils/tempfile.py         |    77 [32m+[m
- WeKnora-office/docreader/uv.lock                   |  3740 [32m++++++[m
- WeKnora-office/docs/BUILTIN_MCP_SERVICES.md        |   144 [32m+[m
- WeKnora-office/docs/BUILTIN_MODELS.md              |   175 [32m+[m
- ...274\200\345\217\221\346\226\207\346\241\243.md" |  1530 [32m+++[m
- WeKnora-office/docs/KnowledgeGraph.md              |    28 [32m+[m
- ...275\277\347\224\250\350\257\264\346\230\216.md" |    30 [32m+[m
- ...260\203\347\224\250\346\265\201\347\250\213.md" |   644 [32m+[m
- WeKnora-office/docs/QA.md                          |   165 [32m+[m
- WeKnora-office/docs/ROADMAP.md                     |    46 [32m+[m
- WeKnora-office/docs/WeKnora.md                     |   330 [32m+[m
- WeKnora-office/docs/WeKnora.pdf                    |   Bin [31m0[m -> [32m2020058[m bytes
- WeKnora-office/docs/agent-skills.md                |   648 [32m+[m
- WeKnora-office/docs/api/README.md                  |    81 [32m+[m
- WeKnora-office/docs/api/agent.md                   |   533 [32m+[m
- WeKnora-office/docs/api/chat.md                    |   152 [32m+[m
- WeKnora-office/docs/api/chunk.md                   |   224 [32m+[m
- WeKnora-office/docs/api/evaluation.md              |   154 [32m+[m
- WeKnora-office/docs/api/faq.md                     |   502 [32m+[m
- WeKnora-office/docs/api/initialization.md          |   402 [32m+[m
- WeKnora-office/docs/api/knowledge-base.md          |   728 [32m++[m
- WeKnora-office/docs/api/knowledge-search.md        |    74 [32m+[m
- WeKnora-office/docs/api/knowledge.md               |   682 [32m+[m
- WeKnora-office/docs/api/mcp-service.md             |   396 [32m+[m
- WeKnora-office/docs/api/message.md                 |   266 [32m+[m
- WeKnora-office/docs/api/model.md                   |   501 [32m+[m
- WeKnora-office/docs/api/organization.md            |   983 [32m++[m
- WeKnora-office/docs/api/session.md                 |   372 [32m+[m
- WeKnora-office/docs/api/skill.md                   |    52 [32m+[m
- WeKnora-office/docs/api/system.md                  |   229 [32m+[m
- WeKnora-office/docs/api/tag.md                     |   150 [32m+[m
- WeKnora-office/docs/api/tenant.md                  |   399 [32m+[m
- WeKnora-office/docs/api/web-search.md              |    47 [32m+[m
- WeKnora-office/docs/docs.go                        | 12658 [32m+++++++++++++++++++[m
- WeKnora-office/docs/images/agent-qa.png            |   Bin [31m0[m -> [32m559962[m bytes
- WeKnora-office/docs/images/answer.png              |   Bin [31m0[m -> [32m853609[m bytes
- WeKnora-office/docs/images/arc.png                 |   Bin [31m0[m -> [32m35764[m bytes
- WeKnora-office/docs/images/architecture.png        |   Bin [31m0[m -> [32m927169[m bytes
- WeKnora-office/docs/images/config.png              |   Bin [31m0[m -> [32m701060[m bytes
- WeKnora-office/docs/images/graph1.png              |   Bin [31m0[m -> [32m835658[m bytes
- WeKnora-office/docs/images/graph2.png              |   Bin [31m0[m -> [32m406651[m bytes
- WeKnora-office/docs/images/graph3.png              |   Bin [31m0[m -> [32m347474[m bytes
- WeKnora-office/docs/images/knowledgebases.png      |   Bin [31m0[m -> [32m407614[m bytes
- WeKnora-office/docs/images/knowledges.png          |   Bin [31m0[m -> [32m179689[m bytes
- WeKnora-office/docs/images/logo.png                |   Bin [31m0[m -> [32m115448[m bytes
- WeKnora-office/docs/images/pipeline.jpg            |   Bin [31m0[m -> [32m66763[m bytes
- WeKnora-office/docs/images/pipeline.png            |   Bin [31m0[m -> [32m516509[m bytes
- WeKnora-office/docs/images/pipeline2.jpeg          |   Bin [31m0[m -> [32m106731[m bytes
- WeKnora-office/docs/images/qa.png                  |   Bin [31m0[m -> [32m248094[m bytes
- WeKnora-office/docs/images/settings.png            |   Bin [31m0[m -> [32m167277[m bytes
- WeKnora-office/docs/swagger.json                   | 12633 [32m++++++++++++++++++[m
- WeKnora-office/docs/swagger.yaml                   |  8350 [32m++++++++++++[m
- ...207\217\346\225\260\346\215\256\345\272\223.md" |   190 [32m+[m
- ...251\272\351\227\264\350\257\264\346\230\216.md" |   191 [32m+[m
- ...274\200\345\217\221\346\214\207\345\215\227

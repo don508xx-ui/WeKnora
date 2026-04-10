@@ -1,0 +1,280 @@
+[33mcommit 410ee7ee649cccb818cfb3a99e1e0f7b9a9b5f96[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmaster[m[33m)[m
+Author: don508xx-ui <don508xx@Gmail.com>
+Date:   Fri Apr 10 03:14:55 2026 +0800
+
+    deploy
+
+ -tree -r HEAD'                                     |   103 [32m+[m
+ .env.example                                       |   345 [32m+[m
+ CHANGELOG.md                                       |   871 [32m++[m
+ Dockerfile                                         |     2 [31m-[m
+ LICENSE                                            |  3259 [32m+++++[m
+ Makefile                                           |   288 [32m+[m
+ README.md                                          |   430 [32m+[m
+ README_CN.md                                       |   445 [32m+[m
+ README_JA.md                                       |   437 [32m+[m
+ README_KO.md                                       |   445 [32m+[m
+ SECURITY.md                                        |    46 [32m+[m
+ VERSION                                            |     1 [32m+[m
+ client/README.md                                   |   341 [32m+[m
+ client/README_EN.md                                |   184 [32m+[m
+ client/agent.go                                    |   178 [32m+[m
+ client/agent_manage.go                             |   264 [32m+[m
+ client/chunk.go                                    |   211 [32m+[m
+ client/client.go                                   |   104 [32m+[m
+ client/evaluation.go                               |   113 [32m+[m
+ client/example.go                                  |   254 [32m+[m
+ client/faq.go                                      |   468 [32m+[m
+ client/go.mod                                      |     3 [32m+[m
+ client/go.sum                                      |     0
+ client/initialization.go                           |   255 [32m+[m
+ client/knowledge.go                                |   619 [32m+[m
+ client/knowledgebase.go                            |   422 [32m+[m
+ client/mcp_service.go                              |   207 [32m+[m
+ client/message.go                                  |   191 [32m+[m
+ client/model.go                                    |   193 [32m+[m
+ client/organization.go                             |   643 [32m+[m
+ client/session.go                                  |   477 [32m+[m
+ client/skill.go                                    |    34 [32m+[m
+ client/system.go                                   |   174 [32m+[m
+ client/tag.go                                      |   187 [32m+[m
+ client/tenant.go                                   |   230 [32m+[m
+ client/web_search.go                               |    32 [32m+[m
+ cmd/download/duckdb/duckdb.go                      |    34 [32m+[m
+ config/builtin_agents.yaml                         |   142 [32m+[m
+ config/config.yaml                                 |   112 [32m+[m
+ config/prompt_templates/agent_system_prompt.yaml   |   222 [32m+[m
+ config/prompt_templates/context_template.yaml      |   106 [32m+[m
+ config/prompt_templates/fallback.yaml              |   130 [32m+[m
+ config/prompt_templates/generate_questions.yaml    |    42 [32m+[m
+ .../prompt_templates/generate_session_title.yaml   |    14 [32m+[m
+ config/prompt_templates/generate_summary.yaml      |    38 [32m+[m
+ config/prompt_templates/graph_extraction.yaml      |   232 [32m+[m
+ config/prompt_templates/intent_prompts.yaml        |   144 [32m+[m
+ config/prompt_templates/keywords_extraction.yaml   |    51 [32m+[m
+ config/prompt_templates/rewrite.yaml               |   187 [32m+[m
+ config/prompt_templates/system_prompt.yaml         |   200 [32m+[m
+ dataset/README                                     |   273 [32m+[m
+ dataset/README_zh.md                               |   284 [32m+[m
+ dataset/qa_dataset.py                              |   381 [32m+[m
+ dataset/samples/answers.parquet                    |   Bin [31m0[m -> [32m1949[m bytes
+ dataset/samples/corpus.parquet                     |   Bin [31m0[m -> [32m3902[m bytes
+ dataset/samples/qas.parquet                        |   Bin [31m0[m -> [32m1585[m bytes
+ dataset/samples/qrels.parquet                      |   Bin [31m0[m -> [32m2067[m bytes
+ dataset/samples/queries.parquet                    |   Bin [31m0[m -> [32m1677[m bytes
+ docker-compose.dev.yml                             |   214 [32m+[m
+ docker-compose.yml                                 |   368 [32m+[m
+ docker/Dockerfile.app                              |   109 [32m+[m
+ docker/Dockerfile.docreader                        |   134 [32m+[m
+ docker/Dockerfile.sandbox                          |    30 [32m+[m
+ docker/config/supervisord.conf                     |    31 [32m+[m
+ docreader/Makefile                                 |    23 [32m+[m
+ docreader/README.md                                |   227 [32m+[m
+ docreader/client/client.go                         |   103 [32m+[m
+ docreader/client/client_test.go                    |    85 [32m+[m
+ docreader/config.py                                |   121 [32m+[m
+ docreader/main.py                                  |   214 [32m+[m
+ docreader/models/__init__.py                       |     0
+ docreader/models/document.py                       |    87 [32m+[m
+ docreader/models/read_config.py                    |    17 [32m+[m
+ docreader/ocr/__init__.py                          |    37 [32m+[m
+ docreader/ocr/base.py                              |    31 [32m+[m
+ docreader/ocr/paddle.py                            |   175 [32m+[m
+ docreader/ocr/vlm.py                               |    87 [32m+[m
+ docreader/parser/__init__.py                       |    38 [32m+[m
+ docreader/parser/base_parser.py                    |    61 [32m+[m
+ docreader/parser/chain_parser.py                   |   179 [32m+[m
+ docreader/parser/doc_parser.py                     |   331 [32m+[m
+ docreader/parser/docx2_parser.py                   |    28 [32m+[m
+ docreader/parser/docx_parser.py                    |  1532 [32m+++[m
+ docreader/parser/excel_parser.py                   |   119 [32m+[m
+ docreader/parser/image_parser.py                   |    28 [32m+[m
+ docreader/parser/markdown_parser.py                |   405 [32m+[m
+ docreader/parser/markitdown_parser.py              |    46 [32m+[m
+ docreader/parser/parser.py                         |    82 [32m+[m
+ docreader/parser/pdf_parser.py                     |    15 [32m+[m
+ docreader/parser/registry.py                       |   160 [32m+[m
+ docreader/parser/storage.py                        |   322 [32m+[m
+ docreader/parser/web_parser.py                     |   171 [32m+[m
+ docreader/proto/docreader.pb.go                    |   607 [32m+[m
+ docreader/proto/docreader.proto                    |    61 [32m+[m
+ docreader/proto/docreader_grpc.pb.go               |   159 [32m+[m
+ docreader/proto/docreader_pb2.py                   |    63 [32m+[m
+ docreader/proto/docreader_pb2.pyi                  |   108 [32m+[m
+ docreader/proto/docreader_pb2_grpc.py              |   140 [32m+[m
+ docreader/pyproject.toml                           |    38 [32m+[m
+ docreader/scripts/download_deps.py                 |    70 [32m+[m
+ docreader/scripts/generate_proto.sh                |    36 [32m+[m
+ docreader/splitter/header_hook.py                  |   112 [32m+[m
+ docreader/splitter/splitter.py                     |   584 [32m+[m
+ docreader/testdata/images/test_text.png            |   Bin [31m0[m -> [32m1823[m bytes
+ docreader/testdata/test.html                       |    56 [32m+[m
+ docreader/testdata/test.md                         |    37 [32m+[m
+ docreader/testdata/test.txt                        |    16 [32m+[m
+ docreader/testdata/test_download.txt               |    19 [32m+[m
+ docreader/utils/__init__.py                        |    83 [32m+[m
+ docreader/utils/endecode.py                        |   204 [32m+[m
+ docreader/utils/request.py                         |   149 [32m+[m
+ docreader/utils/split.py                           |    80 [32m+[m
+ docreader/utils/tempfile.py                        |    77 [32m+[m
+ docreader/uv.lock                                  |  3740 [32m++++++[m
+ docs/BUILTIN_MCP_SERVICES.md                       |   144 [32m+[m
+ docs/BUILTIN_MODELS.md                             |   175 [32m+[m
+ ...274\200\345\217\221\346\226\207\346\241\243.md" |  1530 [32m+++[m
+ docs/KnowledgeGraph.md                             |    28 [32m+[m
+ ...275\277\347\224\250\350\257\264\346\230\216.md" |    30 [32m+[m
+ ...260\203\347\224\250\346\265\201\347\250\213.md" |   644 [32m+[m
+ docs/QA.md                                         |   165 [32m+[m
+ docs/ROADMAP.md                                    |    46 [32m+[m
+ docs/WeKnora.md                                    |   330 [32m+[m
+ docs/WeKnora.pdf                                   |   Bin [31m0[m -> [32m2020058[m bytes
+ docs/agent-skills.md                               |   648 [32m+[m
+ docs/api/README.md                                 |    81 [32m+[m
+ docs/api/agent.md                                  |   533 [32m+[m
+ docs/api/chat.md                                   |   152 [32m+[m
+ docs/api/chunk.md                                  |   224 [32m+[m
+ docs/api/evaluation.md                             |   154 [32m+[m
+ docs/api/faq.md                                    |   502 [32m+[m
+ docs/api/initialization.md                         |   402 [32m+[m
+ docs/api/knowledge-base.md                         |   728 [32m++[m
+ docs/api/knowledge-search.md                       |    74 [32m+[m
+ docs/api/knowledge.md                              |   682 [32m+[m
+ docs/api/mcp-service.md                            |   396 [32m+[m
+ docs/api/message.md                                |   266 [32m+[m
+ docs/api/model.md                                  |   501 [32m+[m
+ docs/api/organization.md                           |   983 [32m++[m
+ docs/api/session.md                                |   372 [32m+[m
+ docs/api/skill.md                                  |    52 [32m+[m
+ docs/api/system.md                                 |   229 [32m+[m
+ docs/api/tag.md                                    |   150 [32m+[m
+ docs/api/tenant.md                                 |   399 [32m+[m
+ docs/api/web-search.md                             |    47 [32m+[m
+ docs/docs.go                                       | 12658 [32m+++++++++++++++++++[m
+ docs/images/agent-qa.png                           |   Bin [31m0[m -> [32m559962[m bytes
+ docs/images/answer.png                             |   Bin [31m0[m -> [32m853609[m bytes
+ docs/images/arc.png                                |   Bin [31m0[m -> [32m35764[m bytes
+ docs/images/architecture.png                       |   Bin [31m0[m -> [32m927169[m bytes
+ docs/images/config.png                             |   Bin [31m0[m -> [32m701060[m bytes
+ docs/images/graph1.png                             |   Bin [31m0[m -> [32m835658[m bytes
+ docs/images/graph2.png                             |   Bin [31m0[m -> [32m406651[m bytes
+ docs/images/graph3.png                             |   Bin [31m0[m -> [32m347474[m bytes
+ docs/images/knowledgebases.png                     |   Bin [31m0[m -> [32m407614[m bytes
+ docs/images/knowledges.png                         |   Bin [31m0[m -> [32m179689[m bytes
+ docs/images/logo.png                               |   Bin [31m0[m -> [32m115448[m bytes
+ docs/images/pipeline.jpg                           |   Bin [31m0[m -> [32m66763[m bytes
+ docs/images/pipeline.png                           |   Bin [31m0[m -> [32m516509[m bytes
+ docs/images/pipeline2.jpeg                         |   Bin [31m0[m -> [32m106731[m bytes
+ docs/images/qa.png                                 |   Bin [31m0[m -> [32m248094[m bytes
+ docs/images/settings.png                           |   Bin [31m0[m -> [32m167277[m bytes
+ docs/swagger.json                                  | 12633 [32m++++++++++++++++++[m
+ docs/swagger.yaml                                  |  8350 [32m++++++++++++[m
+ ...207\217\346\225\260\346\215\256\345\272\223.md" |   190 [32m+[m
+ ...251\272\351\227\264\350\257\264\346\230\216.md" |   191 [32m+[m
+ ...274\200\345\217\221\346\214\207\345\215\227.md" |   285 [32m+[m
+ ...233\276\350\260\261\345\212\237\350\203\275.md" |    85 [32m+[m
+ ...250\241\345\274\217\350\257\264\346\230\216.md" |   106 [32m+[m
+ ...274\200\345\217\221\346\226\207\346\241\243.md" |   882 [32m++[m
+ ...220\234\347\264\242\345\274\225\346\223\216.md" |   267 [32m+[m
+ examples/skills/README.md                          |    92 [32m+[m
+ examples/skills/pdf-processing/FORMS.md            |    44 [32m+[m
+ examples/skills/pdf-processing/SKILL.md            |    40 [32m+[m
+ .../skills/pdf-processing/scripts/analyze_form.py  |    46 [32m+[m
+ .../skills/pdf-processing/scripts/extract_text.py  |    54 [32m+[m
+ frontend/dist/assets/AgentAvatar-BPkYsQTU.js       |     1 [31m-[m
+ frontend/dist/assets/AgentAvatar-ChfeDAWx.js       |     1 [32m+[m
+ ...AgentList-BEJF8pbP.js => AgentList-vF2D5HAQ.js} |     4 [32m+[m[31m-[m
+ ...eBase-BktgvP9d.js => KnowledgeBase-B9ttAjsK.js} |     8 [32m+[m[31m-[m
+ ...P3p.js => KnowledgeBaseEditorModal-C1J0HxD5.js} |     6 [32m+[m[31m-[m
+ frontend/dist/assets/KnowledgeBaseList-CE7M0qWY.js |     1 [31m-[m
+ frontend/dist/assets/KnowledgeBaseList-t8ZMhDjm.js |     1 [32m+[m
+ frontend/dist/assets/KnowledgeSearch-6SIaim9L.js   |     1 [32m+[m
+ frontend/dist/assets/KnowledgeSearch-BWZuPn64.js   |     1 [31m-[m
+ ...ar-CP4X-nP8.js => ListSpaceSidebar-DwySnG1T.js} |     2 [32m+[m[31m-[m
+ frontend/dist/assets/Login-DnVansL3.js             |     1 [31m-[m
+ frontend/dist/assets/Login-z8TdydqY.js             |     1 [32m+[m
+ frontend/dist/assets/ModelSelector-IHpzASde.js     |     1 [32m+[m
+ frontend/dist/assets/ModelSelector-nEgsuviN.js     |     1 [31m-[m
+ frontend/dist/assets/OrganizationList-BmrxyE-o.js  |     1 [32m+[m
+ frontend/dist/assets/OrganizationList-ROU0Ll6m.js  |     1 [31m-[m
+ frontend/dist/assets/Settings-CruecT6t.js          |     1 [31m-[m
+ frontend/dist/assets/Settings-G8AFJBrC.js          |     1 [32m+[m
+ ...eAvatar-Bh-uJR3L.js => SpaceAvatar-Cxzup-vR.js} |     2 [32m+[m[31m-[m
+ .../assets/{arc-Clc9LaUL.js => arc-CiBM_E3m.js}    |     2 [32m+[m[31m-[m
+ ...js => architectureDiagram-VXUJARFQ-BPC1JwSe.js} |     2 [32m+[m[31m-[m
+ ...58i0Wj.js => blockDiagram-VD42YOAC-BHl_m9b_.js} |     2 [32m+[m[31m-[m
+ ...-C3D8Imlm.js => c4Diagram-YG6GDRKO-11UUqBLD.js} |     2 [32m+[m[31m-[m
+ frontend/dist/assets/channel-D48hW_W0.js           |     1 [31m-[m
+ frontend/dist/assets/channel-w_CqaPfI.js           |     1 [32m+[m
+ ...istory-Uu5gjVGW.js => chat-history-CrKlrUA5.js} |     2 [32m+[m[31m-[m
+ ...VUAB-BIm9XrjR.js => chunk-4BX2VUAB-BKCz653W.js} |     2 [32m+[m[31m-[m
+ ...CEB6-CqMOahMp.js => chunk-55IACEB6-OtL_L8Fk.js} |     2 [32m+[m[31m-[m
+ ...7PRW-CVONhm1A.js => chunk-B4BG7PRW-os4AnnSE.js} |     2 [32m+[m[31m-[m
+ ...MBZ5-CJzcuNOp.js => chunk-DI55MBZ5-DXEGFwkS.js} |     2 [32m+[m[31m-[m
+ ...7UC4-s_pldROr.js => chunk-FMBD7UC4-DNebtD1w.js} |     2 [32m+[m[31m-[m
+ ...PNHL-Bz-c1OEr.js => chunk-QN33PNHL-BCoBL0dh.js} |     2 [32m+[m[31m-[m
+ ...N3VN-DVFb4R0w.js => chunk-QZHKN3VN-DTKF867n.js} |     2 [32m+[m[31m-[m
+ ...LE5B-oN4eVoZ_.js => chunk-TZMSLE5B-xWVYxqaW.js} |     2 [32m+[m[31m-[m
+ .../dist/assets/classDiagram-2ON5EDUG-B5weOSE6.js  |     1 [31m-[m
+ .../dist/assets/classDiagram-2ON5EDUG-DtMhvJJC.js  |     1 [32m+[m
+ .../assets/classDiagram-v2-WZHVMYZB-B5weOSE6.js    |     1 [31m-[m
+ .../assets/classDiagram-v2-WZHVMYZB-DtMhvJJC.js    |     1 [32m+[m
+ frontend/dist/assets/clone-BPCVHSl7.js             |     1 [31m-[m
+ frontend/dist/assets/clone-D0wwVUqn.js             |     1 [32m+[m
+ ...TKSEbd.js => cose-bilkent-S5V4N54A-DCgP35Jk.js} |     2 [32m+[m[31m-[m
+ frontend/dist/assets/creatChat-BnsSf5jd.js         |     1 [32m+[m
+ frontend/dist/assets/creatChat-Cfss2KLp.js         |     1 [31m-[m
+ ...VRFP-Cz8tXMsJ.js => dagre-6UL2VRFP-wUSJhqni.js} |     2 [32m+[m[31m-[m
+ ...XK-CHmPkcOz.js => diagram-PSM6KHXK-C3Wm2H8Z.js} |     2 [32m+[m[31m-[m
+ ...5R-Cqu81DZO.js => diagram-QEK2KX5R-BFCVCdnj.js} |     2 [32m+[m[31m-[m
+ ...OG-Dqo03o_4.js => diagram-S2PKOQOG-Dpcd76Gp.js} |     2 [32m+[m[31m-[m
+ ...review-BynIADcu.js => docx-preview-si8DJqwF.js} |     2 [32m+[m[31m-[m
+ ...-B2DeXI4H.js => erDiagram-Q2GNP2WA-ki4m2zgU.js} |     2 [32m+[m[31m-[m
+ ...yQ34efP.js => flowDiagram-NV44I4VS-_wuv7y6f.js} |     2 [32m+[m[31m-[m
+ ...y2uziU.js => ganttDiagram-JELNMOA3-B82SEPCg.js} |     2 [32m+[m[31m-[m
+ ...81d.js => gitGraphDiagram-V2S2FVAM-BA3mqI1I.js} |     2 [32m+[m[31m-[m
+ .../{graph-D4thajEg.js => graph-_-2oQzhH.js}       |     2 [32m+[m[31m-[m
+ frontend/dist/assets/has-D_U7h70t.js               |     1 [32m+[m
+ frontend/dist/assets/has-SGEnzor8.js               |     1 [31m-[m
+ frontend/dist/assets/index-BBun6C7X.js             |     1 [31m-[m
+ .../{index-CgPZmBXr.js => index-BkIZGks2.js}       |     2 [32m+[m[31m-[m
+ frontend/dist/assets/index-CC6Axvib.js             |     1 [32m+[m
+ frontend/dist/assets/index-CJ0j-6Vs.js             |     9 [31m-[m
+ .../{index-ChTIH8A6.js => index-CUzVRhdX.js}       |     2 [32m+[m[31m-[m
+ .../{index-Dfpav5kj.js => index-CeFljJx5.js}       |    96 [32m+[m[31m-[m
+ .../{index-Ct2_TQKH.js => index-DH5nAR55.js}       |     2 [32m+[m[31m-[m
+ frontend/dist/assets/index-DX9-AkFr.js             |     1 [31m-[m
+ .../{index-D1RoJzzd.js => index-Zf_WV8HU.js}       |     2 [32m+[m[31m-[m
+ frontend/dist/assets/index-xxyYbrXM.js             |     9 [32m+[m
+ ...P7e4JAM.js => infoDiagram-HS3SLOUP-Ln8wNUQ8.js} |     2 [32m+[m[31m-[m
+ ...mCMA.js => journeyDiagram-XKPGCS4Q-DXEJn-sh.js} |     2 [32m+[m[31m-[m
+ ...1.js => kanban-definition-3W4ZIXB7-BAYtGZti.js} |     2 [32m+[m[31m-[m
+ .../{layout-Dxj1s17D.js => layout-CdNWbz2C.js}     |     2 [32m+[m[31m-[m
+ .../{linear-DLfkrZlW.js => linear-BnmRt8fW.js}     |     2 [32m+[m[31m-[m
+ .../assets/{menu-DO3imJMl.js => menu-28BvXRMK.js}  |     2 [32m+[m[31m-[m
+ ...iewer-DyDx4BpP.js => mermaidViewer-NXb_1dhD.js} |     8 [32m+[m[31m-[m
+ ....js => mindmap-definition-VGOIOE7T-C-7AaJ82.js} |     2 [32m+[m[31m-[m
+ ...zation-NiStiiHa.js => organization-DtMYgMv9.js} |     2 [32m+[m[31m-[m
+ ...sSymjPLB.js => pieDiagram-ADFJNKIX-BG-F8-3Y.js} |     2 [32m+[m[31m-[m
+ ...-ac.js => quadrantDiagram-AYHSOK5B-CrCm27cQ.js} |     2 [32m+[m[31m-[m
+ frontend/dist/assets/reduce-CP-hRBLn.js            |     1 [32m+[m
+ frontend/dist/assets/reduce-WMI8z2G6.js            |     1 [31m-[m
+ ....js => requirementDiagram-UZGBJVZJ-BNJmmM4W.js} |     2 [32m+[m[31m-[m
+ ...wSbXO.js => sankeyDiagram-TZEHDZUN-DOvTagLX.js} |     2 [32m+[m[31m-[m
+ ...7QV.js => sequenceDiagram-WL72ISMW-DfX5gWQC.js} |     2 [32m+[m[31m-[m
+ .../{settings-BhgU2dyw.js => settings-TPIVVp3q.js} |     2 [32m+[m[31m-[m
+ ...-bjKVW.js => stateDiagram-FKZM4ZOC-CfJby_de.js} |     2 [32m+[m[31m-[m
+ .../assets/stateDiagram-v2-4FDKWEC3-BHUiBGgQ.js    |     1 [31m-[m
+ .../assets/stateDiagram-v2-4FDKWEC3-DpjeT94b.js    |     1 [32m+[m
+ .../{style-DuiXZ_V-.css => style-B-T-0mjU.css}     |     2 [32m+[m[31m-[m
+ ...js => timeline-definition-IT6M3QCI-CapHPjEG.js} |     2 [32m+[m[31m-[m
+ ...PO-rZvQaJmY.js => treemap-GDKQZRPO-DtRocRIS.js} |     2 [32m+[m[31m-[m
+ frontend/dist/assets/useKnowledgeBase-BhS07j6L.js  |     1 [32m+[m
+ frontend/dist/assets/useKnowledgeBase-xPTbktDi.js  |     1 [31m-[m
+ .../useKnowledgeBaseCreationNavigation-B1qUeglq.js |     1 [31m-[m
+ .../useKnowledgeBaseCreationNavigation-Be64dYZV.js |     1 [32m+[m
+ ...5JfZVu8o.js => web-search-provider-BRYK863x.js} |     2 [32m+[m[31m-[m
+ ...I4nV.js => xychartDiagram-PRI3JC2R-4e4JY40F.js} |     2 [32m+[m[31m-[m
+ frontend/dist/index.html                           |     4 [32m+[m[31m-[m
+ frontend/src/utils/request.ts                      |   216 [32m+[m[31m-[m
+ go.mod                                             |   299 [32m+[m
+ go.sum                                             |  3768 [32m

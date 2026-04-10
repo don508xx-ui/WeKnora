@@ -27,8 +27,6 @@ RUN go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate
 # Copy go mod and sum files
 COPY go.mod go.sum ./
 RUN --mount=type=cache,target=/go/pkg/mod go mod download
-COPY cmd/download cmd/download
-RUN go run cmd/download/duckdb/duckdb.go
 COPY . .
 
 # Get version and commit info for build injection
@@ -92,8 +90,9 @@ COPY --from=builder /app/dataset/samples ./dataset/samples
 COPY --from=builder /app/skills/preloaded ./skills/preloaded
 # Keep a read-only backup so bind-mount cannot erase built-in skills
 COPY --from=builder /app/skills/preloaded ./skills/_builtin
-COPY --from=builder /root/.duckdb /home/appuser/.duckdb
 COPY --from=builder /app/WeKnora .
+# 【关键】复制 web 目录（前端静态文件）
+COPY --from=builder /app/web ./web
 
 # Copy and make entrypoint script executable
 COPY --from=builder /app/scripts/docker-entrypoint.sh ./scripts/docker-entrypoint.sh
