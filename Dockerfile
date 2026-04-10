@@ -91,8 +91,8 @@ COPY --from=builder /app/skills/preloaded ./skills/preloaded
 # Keep a read-only backup so bind-mount cannot erase built-in skills
 COPY --from=builder /app/skills/preloaded ./skills/_builtin
 COPY --from=builder /app/WeKnora .
-# 【关键】复制 web 目录（前端静态文件）
-COPY --from=builder /app/web ./web
+# 【关键】复制 web 目录（前端静态文件）- 从本地复制以使用最新构建
+COPY ./web ./web
 
 # Copy and make entrypoint script executable
 COPY --from=builder /app/scripts/docker-entrypoint.sh ./scripts/docker-entrypoint.sh
