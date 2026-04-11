@@ -1,0 +1,8 @@
+{
+  "name": "weknora",
+  "version": "1.0.0",
+  "description": "WeKnora - Knowledge Base with AI",
+  "scripts": {
+    "build": "echo \"Skipping frontend build - using pre-built web directory\""
+  }
+}
