@@ -17,7 +17,7 @@ import (
 func main() {
 	ctx := context.Background()
 
-	// Force rebuild: fix Zeabur build by removing root package-lock.json 2026-04-12
+	// Force rebuild: fix Zeabur build by adding .dockerignore 2026-04-12
 	// Load configuration
 	cfg, err := config.LoadConfig()
 	if err != nil {
