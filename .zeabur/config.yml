@@ -1,0 +1,10 @@
+version: "1.0"
+name: weknora
+services:
+  - name: app
+    type: docker
+    dockerfile: Dockerfile
+    build:
+      args:
+        - name: DOCKER_BUILDKIT
+          value: "1"
