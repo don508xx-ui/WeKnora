@@ -35,7 +35,7 @@ COPY . .
 
 # Build frontend
 WORKDIR /app/frontend
-RUN npm ci && npm run build
+RUN npm install && npm run build
 WORKDIR /app
 
 # Get version and commit info for build injection
