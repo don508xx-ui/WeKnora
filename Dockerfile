@@ -14,12 +14,16 @@ ENV GOPRIVATE=${GOPRIVATE_ARG}
 ENV GOPROXY=${GOPROXY_ARG}
 ENV GOSUMDB=${GOSUMDB_ARG}
 
-# Install dependencies including Node.js for frontend build
+# Install dependencies
 RUN if [ -n "$APK_MIRROR_ARG" ]; then \
         sed -i "s@deb.debian.org@${APK_MIRROR_ARG}@g" /etc/apt/sources.list.d/debian.sources; \
     fi && \
     apt-get update && \
-    apt-get install -y git build-essential libsqlite3-dev nodejs npm
+    apt-get install -y git build-essential libsqlite3-dev ca-certificates curl
+
+# Install Node.js 20.x from NodeSource
+RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
+    apt-get install -y nodejs
 
 # Install migrate tool
 RUN go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@latest
@@ -31,7 +35,7 @@ COPY . .
 
 # Build frontend
 WORKDIR /app/frontend
-RUN npm install && npm run build
+RUN npm ci && npm run build
 WORKDIR /app
 
 # Get version and commit info for build injection
