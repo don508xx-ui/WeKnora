@@ -14,12 +14,12 @@ ENV GOPRIVATE=${GOPRIVATE_ARG}
 ENV GOPROXY=${GOPROXY_ARG}
 ENV GOSUMDB=${GOSUMDB_ARG}
 
-# Install dependencies
+# Install dependencies including Node.js for frontend build
 RUN if [ -n "$APK_MIRROR_ARG" ]; then \
         sed -i "s@deb.debian.org@${APK_MIRROR_ARG}@g" /etc/apt/sources.list.d/debian.sources; \
     fi && \
     apt-get update && \
-    apt-get install -y git build-essential libsqlite3-dev
+    apt-get install -y git build-essential libsqlite3-dev nodejs npm
 
 # Install migrate tool
 RUN go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@latest
@@ -28,6 +28,11 @@ RUN go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate
 COPY go.mod go.sum ./
 RUN --mount=type=cache,target=/go/pkg/mod go mod download
 COPY . .
+
+# Build frontend
+WORKDIR /app/frontend
+RUN npm install && npm run build
+WORKDIR /app
 
 # Get version and commit info for build injection
 ARG VERSION_ARG
@@ -64,7 +69,6 @@ RUN if [ -n "$APK_MIRROR_ARG" ]; then \
         build-essential postgresql-client default-mysql-client ca-certificates tzdata sed curl bash vim wget \
         libsqlite3-0 \
         python3 python3-pip python3-dev libffi-dev libssl-dev \
-        nodejs npm \
         gosu && \
     python3 -m pip install --break-system-packages --upgrade pip setuptools wheel && \
     mkdir -p /home/appuser/.local/bin && \
@@ -92,8 +96,8 @@ COPY --from=builder /app/skills/preloaded ./skills/preloaded
 # Keep a read-only backup so bind-mount cannot erase built-in skills
 COPY --from=builder /app/skills/preloaded ./skills/_builtin
 COPY --from=builder /app/WeKnora .
-# 【关键】复制 web 目录（前端静态文件）- 从本地复制以使用最新构建
-COPY ./web ./web
+# 【关键】复制 web 目录（前端静态文件）- 从builder阶段复制最新构建的
+COPY --from=builder /app/frontend/dist ./web
 
 # Copy and make entrypoint script executable
 COPY --from=builder /app/scripts/docker-entrypoint.sh ./scripts/docker-entrypoint.sh
@@ -103,7 +107,6 @@ RUN chmod +x ./scripts/*.sh
 
 # Expose ports
 EXPOSE 8080
-
 
 ENTRYPOINT ["./scripts/docker-entrypoint.sh"]
 CMD ["./WeKnora"]
