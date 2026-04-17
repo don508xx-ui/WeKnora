@@ -6,7 +6,8 @@ import i18n from '@/i18n'
 const t = (key: string) => i18n.global.t(key)
 
 // API基础URL
-const BASE_URL = import.meta.env.VITE_IS_DOCKER ? "" : "http://localhost:8080";
+// 直接使用相对路径，这样在任何部署环境（包括Zeabur）都能正常工作
+const BASE_URL = "";
 
 
 // 创建Axios实例
