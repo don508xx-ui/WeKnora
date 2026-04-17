@@ -35,7 +35,9 @@ COPY . .
 
 # Build frontend
 WORKDIR /app/frontend
-RUN npm install && npm run build
+RUN npm install && \
+    ls -la node_modules/.bin/ | head -20 && \
+    npm run build
 WORKDIR /app
 
 # Get version and commit info for build injection
