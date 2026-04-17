@@ -17,7 +17,7 @@ import (
 func main() {
 	ctx := context.Background()
 
-	// Force rebuild: add root package.json to skip Zeabur frontend build 2026-04-12
+	// Force rebuild: rebuild frontend with 6-character password and relative API URL 2026-04-17
 	// Load configuration
 	cfg, err := config.LoadConfig()
 	if err != nil {
