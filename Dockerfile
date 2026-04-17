@@ -35,9 +35,11 @@ COPY . .
 
 # Build frontend
 WORKDIR /app/frontend
-RUN npm install && \
-    ls -la node_modules/.bin/ | head -20 && \
-    npm run build
+RUN npm install
+RUN echo "=== Checking node_modules/.bin ===" && ls node_modules/.bin/ | grep -E "vite|vue" || echo "vite not found in node_modules/.bin"
+RUN echo "=== Checking npm root ===" && npm root
+RUN echo "=== Checking PATH ===" && echo $PATH
+RUN npm run build
 WORKDIR /app
 
 # Get version and commit info for build injection
