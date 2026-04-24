@@ -464,9 +464,7 @@ const formRules = computed(() => ({
   password: [
     { required: true, message: t('auth.passwordRequired'), type: 'error' },
     { min: 6, message: t('auth.passwordMinLength'), type: 'error' },
-    { max: 32, message: t('auth.passwordMaxLength'), type: 'error' },
-    { pattern: /[a-zA-Z]/, message: t('auth.passwordMustContainLetter'), type: 'error' },
-    { pattern: /\d/, message: t('auth.passwordMustContainNumber'), type: 'error' }
+    { max: 32, message: t('auth.passwordMaxLength'), type: 'error' }
   ]
 }))
 
@@ -489,9 +487,7 @@ const registerRules = computed(() => ({
   password: [
     { required: true, message: t('auth.passwordRequired'), type: 'error' },
     { min: 6, message: t('auth.passwordMinLength'), type: 'error' },
-    { max: 32, message: t('auth.passwordMaxLength'), type: 'error' },
-    { pattern: /[a-zA-Z]/, message: t('auth.passwordMustContainLetter'), type: 'error' },
-    { pattern: /\d/, message: t('auth.passwordMustContainNumber'), type: 'error' }
+    { max: 32, message: t('auth.passwordMaxLength'), type: 'error' }
   ],
   confirmPassword: [
     { required: true, message: t('auth.confirmPasswordRequired'), type: 'error' },
@@ -579,7 +575,9 @@ const loadOIDCConfig = async () => {
     const response = await getOIDCConfig()
     oidcEnabled.value = !!response.success && !!response.enabled
     oidcProviderName.value = response.provider_display_name || ''
-  } catch {
+  } catch (error) {
+    // 静默处理 OIDC 配置获取失败，不显示网络错误
+    console.log('OIDC 配置获取失败（非错误）:', error)
     oidcEnabled.value = false
     oidcProviderName.value = ''
   }
