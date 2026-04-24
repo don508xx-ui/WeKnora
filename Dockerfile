@@ -21,10 +21,6 @@ RUN if [ -n "$APK_MIRROR_ARG" ]; then \
     apt-get update && \
     apt-get install -y git build-essential libsqlite3-dev ca-certificates curl
 
-# Install Node.js 20.x from NodeSource
-RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
-    apt-get install -y nodejs
-
 # Install migrate tool
 RUN go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@latest
 
@@ -32,14 +28,6 @@ RUN go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate
 COPY go.mod go.sum ./
 RUN --mount=type=cache,target=/go/pkg/mod go mod download
 COPY . .
-
-# Build frontend
-WORKDIR /app/frontend
-RUN npm install
-RUN echo "=== Checking node_modules/.bin ===" && ls node_modules/.bin/ | grep -E "vite|vue" || echo "vite not found in node_modules/.bin"
-RUN echo "=== Using npx to run vite ==="
-RUN npx vite build
-WORKDIR /app
 
 # Get version and commit info for build injection
 ARG VERSION_ARG
@@ -103,8 +91,8 @@ COPY --from=builder /app/skills/preloaded ./skills/preloaded
 # Keep a read-only backup so bind-mount cannot erase built-in skills
 COPY --from=builder /app/skills/preloaded ./skills/_builtin
 COPY --from=builder /app/WeKnora .
-# 【关键】复制 web 目录（前端静态文件）- 从builder阶段复制最新构建的
-COPY --from=builder /app/frontend/dist ./web
+# 【关键】复制 web 目录（前端静态文件）- 本地已构建好
+COPY ./web ./web
 
 # Copy and make entrypoint script executable
 COPY --from=builder /app/scripts/docker-entrypoint.sh ./scripts/docker-entrypoint.sh
