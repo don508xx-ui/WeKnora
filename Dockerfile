@@ -91,6 +91,7 @@ COPY --from=builder /app/skills/preloaded ./skills/preloaded
 # Keep a read-only backup so bind-mount cannot erase built-in skills
 COPY --from=builder /app/skills/preloaded ./skills/_builtin
 COPY --from=builder /app/WeKnora .
+
 # 【关键】复制 web 目录（前端静态文件）- 本地已构建好
 COPY ./web ./web
 
