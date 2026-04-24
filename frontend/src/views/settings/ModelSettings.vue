@@ -440,9 +440,11 @@ const handleModelSave = async (modelData: any) => {
       }
     }
 
-    if (editingModel.value && editingModel.value.id) {
+    // 使用 modelData.id 或 editingModel.value.id 来判断是更新还是创建
+    const modelId = modelData.id || editingModel.value?.id
+    if (modelId) {
       // 更新现有模型
-      await updateModelAPI(editingModel.value.id, apiModelData)
+      await updateModelAPI(modelId, apiModelData)
       MessagePlugin.success(t('modelSettings.toasts.updated'))
     } else {
       // 添加新模型
