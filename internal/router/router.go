@@ -268,7 +268,7 @@ func RegisterKnowledgeBaseRoutes(r *gin.RouterGroup, handler *handler.KnowledgeB
 		// 置顶/取消置顶知识库
 		kb.PUT("/:id/pin", handler.TogglePinKnowledgeBase)
 		// 混合搜索
-		kb.GET("/:id/hybrid-search", handler.HybridSearch)
+		kb.POST("/:id/hybrid-search", handler.HybridSearch)
 		// 拷贝知识库
 		kb.POST("/copy", handler.CopyKnowledgeBase)
 		// 获取知识库复制进度
