@@ -139,27 +139,16 @@ func (e *OpenAIEmbedder) doRequestWithRetry(ctx context.Context, jsonData []byte
 }
 
 func (e *OpenAIEmbedder) BatchEmbed(ctx context.Context, texts []string) ([][]float32, error) {
-	// Create request body
+	// Create request body - only send minimal parameters
+	// This avoids issues with Zhipu API not supporting encoding_format and truncate_prompt_tokens
+	var reqBody OpenAIEmbedRequest
+	reqBody = OpenAIEmbedRequest{
+		Model: e.modelName,
+		Input: texts,
+	}
+	
 	// Check if using Zhipu API (bigmodel.cn)
 	isZhipuAPI := strings.Contains(e.baseURL, "bigmodel.cn")
-	
-	var reqBody OpenAIEmbedRequest
-	if isZhipuAPI {
-		// Zhipu API doesn't support encoding_format and truncate_prompt_tokens
-		// Also don't send dimensions parameter - use default 2048
-		reqBody = OpenAIEmbedRequest{
-			Model: e.modelName,
-			Input: texts,
-		}
-	} else {
-		// Standard OpenAI API
-		reqBody = OpenAIEmbedRequest{
-			Model:                e.modelName,
-			Input:                texts,
-			EncodingFormat:       "float",
-			TruncatePromptTokens: e.truncatePromptTokens,
-		}
-	}
 
 	jsonData, err := json.Marshal(reqBody)
 	if err != nil {
