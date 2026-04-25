@@ -126,6 +126,14 @@ func (e *OpenAIEmbedder) doRequestWithRetry(ctx context.Context, jsonData []byte
 		}
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("Authorization", "Bearer "+e.apiKey)
+		
+		// LOG EVERYTHING for debugging Zhipu API!
+		logger.GetLogger(ctx).Infof("=== EMBEDDING API REQUEST ===")
+		logger.GetLogger(ctx).Infof("URL: %s", url)
+		logger.GetLogger(ctx).Infof("Method: %s", req.Method)
+		logger.GetLogger(ctx).Infof("Content-Type: %s", req.Header.Get("Content-Type"))
+		logger.GetLogger(ctx).Infof("Body: %s", string(jsonData))
+		logger.GetLogger(ctx).Infof("=== END REQUEST ===")
 
 		resp, err = e.httpClient.Do(req)
 		if err == nil {
