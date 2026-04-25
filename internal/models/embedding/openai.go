@@ -146,11 +146,10 @@ func (e *OpenAIEmbedder) BatchEmbed(ctx context.Context, texts []string) ([][]fl
 	var reqBody OpenAIEmbedRequest
 	if isZhipuAPI {
 		// Zhipu API doesn't support encoding_format and truncate_prompt_tokens
-		// But supports dimensions parameter
+		// Also don't send dimensions parameter - use default 2048
 		reqBody = OpenAIEmbedRequest{
-			Model:      e.modelName,
-			Input:      texts,
-			Dimensions: e.dimensions,
+			Model: e.modelName,
+			Input: texts,
 		}
 	} else {
 		// Standard OpenAI API
