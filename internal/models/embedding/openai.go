@@ -1,5 +1,7 @@
 package embedding
 
+// Fix for Zhipu Embedding API
+
 import (
 	"bytes"
 	"context"
