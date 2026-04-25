@@ -167,9 +167,14 @@ func (e *OpenAIEmbedder) BatchEmbed(ctx context.Context, texts []string) ([][]fl
 		return nil, fmt.Errorf("marshal request: %w", err)
 	}
 
-	// Log request details for debugging
+	// Log request details for debugging - including full JSON
 	logger.GetLogger(ctx).Debugf("OpenAIEmbedder BatchEmbed: model=%s, input_count=%d, truncate_tokens=%d",
 		e.modelName, len(texts), e.truncatePromptTokens)
+	
+	// Log full JSON request - critical for debugging Zhipu API issues
+	if isZhipuAPI {
+		logger.GetLogger(ctx).Infof("Zhipu API Request Body: %s", string(jsonData))
+	}
 
 	// Check for invalid input lengths and log details
 	hasInvalidLength := false
