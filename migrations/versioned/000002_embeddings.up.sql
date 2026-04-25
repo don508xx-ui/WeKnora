@@ -3,11 +3,19 @@
 
 DO $$
 BEGIN
+    -- Check if we should skip this migration
+    IF current_setting('app.skip_embedding', true) = 'true' THEN
+        RAISE NOTICE 'Skipping migration embeddings (app.skip_embedding=true)';
+        RETURN;
+    END IF;
+
+    -- If we reach here, proceed with migration
     RAISE NOTICE '[Conditional Migration: embeddings] Creating embeddings table...';
 
-    -- Create required extensions (pg_search may not be available, skip it)
+    -- Create required extensions
     CREATE EXTENSION IF NOT EXISTS vector;
     CREATE EXTENSION IF NOT EXISTS pg_trgm;
+    CREATE EXTENSION IF NOT EXISTS pg_search;
 
     -- Create embeddings table
     RAISE NOTICE '[Conditional Migration: embeddings] Creating indexes for embeddings (this may take a while)...';
@@ -28,6 +36,23 @@ BEGIN
     );
 
     CREATE UNIQUE INDEX IF NOT EXISTS embeddings_unique_source ON embeddings(source_id, source_type);
+
+    -- Create BM25 search index (check if exists first)
+    IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'embeddings_search_idx') THEN
+        CREATE INDEX embeddings_search_idx ON embeddings
+        USING bm25 (id, knowledge_base_id, content, knowledge_id, chunk_id)
+        WITH (
+            key_field = 'id',
+            text_fields = '{
+                "content": {
+                  "tokenizer": {"type": "chinese_lindera"}
+                }
+            }'
+        );
+        RAISE NOTICE '[Conditional Migration: embeddings] Created BM25 index embeddings_search_idx';
+    ELSE
+        RAISE NOTICE '[Conditional Migration: embeddings] BM25 index embeddings_search_idx already exists';
+    END IF;
 
     -- Create HNSW indexes for vector search (check if exists first)
     IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'embeddings_embedding_idx' OR indexname LIKE 'embeddings_embedding%3584%') THEN
@@ -58,6 +83,12 @@ BEGIN
 
     -- Add index for knowledge_base_id
     CREATE INDEX IF NOT EXISTS idx_embeddings_knowledge_base_id ON embeddings(knowledge_base_id);
+
+    -- Reindex BM25 search index (idempotent - will rebuild if exists)
+    IF EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'embeddings_search_idx') THEN
+        REINDEX INDEX embeddings_search_idx;
+        RAISE NOTICE '[Migration 000002] Reindexed embeddings_search_idx';
+    END IF;
 
     RAISE NOTICE '[Conditional Migration: embeddings] Embeddings table setup completed successfully!';
 END $$;
