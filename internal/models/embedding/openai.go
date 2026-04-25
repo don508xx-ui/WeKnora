@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/Tencent/WeKnora/internal/logger"
@@ -32,6 +33,7 @@ type OpenAIEmbedRequest struct {
 	Input                []string `json:"input"`
 	EncodingFormat       string   `json:"encoding_format,omitempty"`
 	TruncatePromptTokens int      `json:"truncate_prompt_tokens,omitempty"`
+	Dimensions           int      `json:"dimensions,omitempty"`
 }
 
 // OpenAIEmbedResponse represents an OpenAI embedding response
@@ -136,11 +138,26 @@ func (e *OpenAIEmbedder) doRequestWithRetry(ctx context.Context, jsonData []byte
 
 func (e *OpenAIEmbedder) BatchEmbed(ctx context.Context, texts []string) ([][]float32, error) {
 	// Create request body
-	reqBody := OpenAIEmbedRequest{
-		Model:                e.modelName,
-		Input:                texts,
-		EncodingFormat:       "float",
-		TruncatePromptTokens: e.truncatePromptTokens,
+	// Check if using Zhipu API (bigmodel.cn)
+	isZhipuAPI := strings.Contains(e.baseURL, "bigmodel.cn")
+	
+	var reqBody OpenAIEmbedRequest
+	if isZhipuAPI {
+		// Zhipu API doesn't support encoding_format and truncate_prompt_tokens
+		// But supports dimensions parameter
+		reqBody = OpenAIEmbedRequest{
+			Model:      e.modelName,
+			Input:      texts,
+			Dimensions: e.dimensions,
+		}
+	} else {
+		// Standard OpenAI API
+		reqBody = OpenAIEmbedRequest{
+			Model:                e.modelName,
+			Input:                texts,
+			EncodingFormat:       "float",
+			TruncatePromptTokens: e.truncatePromptTokens,
+		}
 	}
 
 	jsonData, err := json.Marshal(reqBody)
