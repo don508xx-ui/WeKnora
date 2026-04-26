@@ -875,23 +875,29 @@ func (s *sessionService) KnowledgeInterpret(ctx context.Context,
 		})
 	}
 
-	var contextBuilder strings.Builder
+	var contextsBuilder strings.Builder
+	
+	// 构建contexts内容
+	for i, result := range searchResults {
+		if i > 0 {
+			contextsBuilder.WriteString("\n\n")
+		}
+		contextsBuilder.WriteString(fmt.Sprintf("[%d] %s", i+1, result.Content))
+	}
+	
+	contextsStr := contextsBuilder.String()
+	
+	// 使用WeKnora的模板渲染函数
 	contextTemplate := s.cfg.Conversation.Summary.ContextTemplate
 	if contextTemplate == "" {
 		contextTemplate = "基于以下参考资料回答问题：\n\n{{contexts}}\n\n问题：{{query}}"
 	}
 	
-	var contextContent strings.Builder
-	for i, result := range searchResults {
-		contextContent.WriteString(fmt.Sprintf("【资料%d】%s\n", i+1, result.KnowledgeTitle))
-		contextContent.WriteString(result.Content)
-		contextContent.WriteString("\n\n")
-	}
-	
-	contextStr := contextContent.String()
-	finalContext := strings.ReplaceAll(contextTemplate, "{{contexts}}", contextStr)
-	finalContext = strings.ReplaceAll(finalContext, "{{query}}", query)
-	contextBuilder.WriteString(finalContext)
+	userContent := types.RenderPromptPlaceholders(contextTemplate, types.PlaceholderValues{
+		"query":    query,
+		"contexts": contextsStr,
+		"language": "zh",
+	})
 
 	if modelID == "" {
 		if len(knowledgeBaseIDs) > 0 {
@@ -936,14 +942,21 @@ func (s *sessionService) KnowledgeInterpret(ctx context.Context,
 		return nil, err
 	}
 
+	// 使用配置的system prompt，并渲染{{contexts}}变量
 	systemPrompt := s.cfg.Conversation.Summary.Prompt
 	if systemPrompt == "" {
-		systemPrompt = "你是一个专业的知识解读助手。请根据提供的参考资料，直接给出结构清晰、内容完整的回答，不要展示分析过程。"
+		systemPrompt = "You are WeKnora, a professional intelligent information retrieval assistant. The following is retrieved information that may or may not be relevant:\n{{contexts}}\n\nPlease answer the user's question based on the retrieved information."
 	}
 	
+	// 渲染system prompt中的{{contexts}}变量
+	renderedSystemPrompt := types.RenderPromptPlaceholders(systemPrompt, types.PlaceholderValues{
+		"contexts": contextsStr,
+		"language": "zh-CN",
+	})
+	
 	messages := []chat.Message{
-		{Role: "system", Content: systemPrompt},
-		{Role: "user", Content: contextBuilder.String()},
+		{Role: "system", Content: renderedSystemPrompt},
+		{Role: "user", Content: userContent},
 	}
 
 	chatOptions := &chat.ChatOptions{

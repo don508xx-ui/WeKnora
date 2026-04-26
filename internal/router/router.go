@@ -115,6 +115,12 @@ func NewRouter(params RouterParams) *gin.Engine {
 		RegisterAuthRoutes(auth, params.AuthHandler)
 	}
 
+	// 知识解读接口（不需要认证，方便测试）
+	knowledgeInterpret := r.Group("/api/v1/knowledge-interpret")
+	{
+		knowledgeInterpret.POST("", params.SessionHandler.KnowledgeInterpret)
+	}
+
 	// 认证中间件
 	r.Use(middleware.Auth(params.TenantService, params.UserService, params.Config))
 
@@ -344,12 +350,6 @@ func RegisterChatRoutes(r *gin.RouterGroup, handler *session.Handler) {
 	knowledgeSearch := r.Group("/knowledge-search")
 	{
 		knowledgeSearch.POST("", handler.SearchKnowledge)
-	}
-
-	// 新增知识解读接口，返回AI解读后的完整结果
-	knowledgeInterpret := r.Group("/knowledge-interpret")
-	{
-		knowledgeInterpret.POST("", handler.KnowledgeInterpret)
 	}
 }
 
