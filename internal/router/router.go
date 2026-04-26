@@ -115,14 +115,14 @@ func NewRouter(params RouterParams) *gin.Engine {
 		RegisterAuthRoutes(auth, params.AuthHandler)
 	}
 
-	// 知识解读接口（不需要认证，方便测试）
+	// 认证中间件
+	r.Use(middleware.Auth(params.TenantService, params.UserService, params.Config))
+
+	// 知识解读接口（需要认证）
 	knowledgeInterpret := r.Group("/api/v1/knowledge-interpret")
 	{
 		knowledgeInterpret.POST("", params.SessionHandler.KnowledgeInterpret)
 	}
-
-	// 认证中间件
-	r.Use(middleware.Auth(params.TenantService, params.UserService, params.Config))
 
 	// 文件服务：统一代理本地/MinIO/COS/TOS存储后端（需要认证）
 	serveFiles(r)
