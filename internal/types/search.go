@@ -230,3 +230,18 @@ func NewPageResult(total int64, page *Pagination, data interface{}) *PageResult 
 		Data:     data,
 	}
 }
+
+// KnowledgeInterpretResponse defines the response structure for knowledge interpretation
+type KnowledgeInterpretResponse struct {
+	Answer  string                       `json:"answer"`   // AI interpreted answer in markdown format
+	Sources []KnowledgeInterpretSource   `json:"sources"`  // Source references
+	Model   string                       `json:"model"`    // Model used for interpretation
+	Success bool                         `json:"success"`  // Whether the interpretation was successful
+}
+
+// KnowledgeInterpretSource represents a source reference in the interpretation
+type KnowledgeInterpretSource struct {
+	Title       string  `json:"title"`        // Document title
+	KnowledgeID string  `json:"knowledge_id"` // Knowledge ID
+	Relevance   float64 `json:"relevance"`    // Relevance score
+}

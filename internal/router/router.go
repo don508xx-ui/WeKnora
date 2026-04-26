@@ -350,6 +350,12 @@ func RegisterChatRoutes(r *gin.RouterGroup, handler *session.Handler) {
 	{
 		knowledgeSearch.POST("", handler.SearchKnowledge)
 	}
+
+	// 新增知识解读接口，返回AI解读后的完整结果
+	knowledgeInterpret := r.Group("/knowledge-interpret")
+	{
+		knowledgeInterpret.POST("", handler.KnowledgeInterpret)
+	}
 }
 
 // RegisterTenantRoutes 注册租户相关的路由

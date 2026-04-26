@@ -841,3 +841,135 @@ func (s *sessionService) resolveWebFetchTopN(req *types.QARequest) int {
 	}
 	return 3
 }
+
+// KnowledgeInterpret performs knowledge-based interpretation with LLM, returning a non-streaming formatted answer
+// This is similar to what the frontend displays after AI processing
+func (s *sessionService) KnowledgeInterpret(ctx context.Context,
+	knowledgeBaseIDs []string, knowledgeIDs []string, query string, modelID string,
+) (*types.KnowledgeInterpretResponse, error) {
+	logger.Info(ctx, "Start knowledge interpretation with LLM")
+	logger.Infof(ctx, "Knowledge interpret parameters, knowledge base IDs: %v, knowledge IDs: %v, query: %s, modelID: %s",
+		knowledgeBaseIDs, knowledgeIDs, query, modelID)
+
+	// Step 1: Search for relevant knowledge
+	searchResults, err := s.SearchKnowledge(ctx, knowledgeBaseIDs, knowledgeIDs, query)
+	if err != nil {
+		logger.Errorf(ctx, "Failed to search knowledge: %v", err)
+		return nil, err
+	}
+
+	if len(searchResults) == 0 {
+		logger.Warn(ctx, "No search results found for interpretation")
+		return &types.KnowledgeInterpretResponse{
+			Answer:  "未找到相关知识，无法提供解读。",
+			Sources: []types.KnowledgeInterpretSource{},
+			Model:   modelID,
+			Success: true,
+		}, nil
+	}
+
+	// Step 2: Build sources from search results
+	sources := make([]types.KnowledgeInterpretSource, 0, len(searchResults))
+	for _, result := range searchResults {
+		sources = append(sources, types.KnowledgeInterpretSource{
+			Title:       result.KnowledgeTitle,
+			KnowledgeID: result.KnowledgeID,
+			Relevance:   result.Score,
+		})
+	}
+
+	// Step 3: Build context from search results
+	var contextBuilder strings.Builder
+	contextBuilder.WriteString("基于以下参考资料回答问题：\n\n")
+	for i, result := range searchResults {
+		contextBuilder.WriteString(fmt.Sprintf("【资料%d】%s\n", i+1, result.KnowledgeTitle))
+		contextBuilder.WriteString(result.Content)
+		contextBuilder.WriteString("\n\n")
+	}
+	contextBuilder.WriteString(fmt.Sprintf("\n问题：%s\n\n", query))
+	contextBuilder.WriteString("请根据以上资料，提供一个结构清晰、内容完整的回答。要求：\n")
+	contextBuilder.WriteString("1. 使用 Markdown 格式\n")
+	contextBuilder.WriteString("2. 包含适当的标题层级\n")
+	contextBuilder.WriteString("3. 使用列表、引用等格式增强可读性\n")
+	contextBuilder.WriteString("4. 在适当位置标注引用来源\n")
+
+	// Step 4: Resolve model ID
+	if modelID == "" {
+		// Try to get model from first knowledge base
+		if len(knowledgeBaseIDs) > 0 {
+			kb, err := s.knowledgeBaseService.GetKnowledgeBaseByID(ctx, knowledgeBaseIDs[0])
+			if err == nil && kb != nil && kb.SummaryModelID != "" {
+				modelID = kb.SummaryModelID
+			}
+		}
+		// Fallback to first available KnowledgeQA model
+		if modelID == "" {
+			models, err := s.modelService.ListModels(ctx)
+			if err == nil {
+				for _, model := range models {
+					if model != nil && model.Type == types.ModelTypeKnowledgeQA {
+						modelID = model.ID
+						break
+					}
+				}
+			}
+		}
+	}
+
+	if modelID == "" {
+		return nil, fmt.Errorf("no model available for interpretation")
+	}
+
+	// Step 5: Call LLM for interpretation
+	model, err := s.modelService.GetModelByID(ctx, modelID)
+	if err != nil {
+		logger.Errorf(ctx, "Failed to get model %s: %v", modelID, err)
+		return nil, err
+	}
+
+	// Create chat instance with fallback support
+	chatInstance, err := chat.NewChat(ctx, model, s.cfg)
+	if err != nil {
+		logger.Errorf(ctx, "Failed to create chat instance: %v", err)
+		return nil, err
+	}
+
+	// Build messages
+	messages := []chat.Message{
+		{Role: "system", Content: "你是一个专业的知识解读助手。请根据提供的参考资料，给出结构清晰、内容完整的回答。"},
+		{Role: "user", Content: contextBuilder.String()},
+	}
+
+	// Chat options
+	chatOptions := &chat.ChatOptions{
+		Temperature:         s.cfg.Conversation.Summary.Temperature,
+		MaxCompletionTokens: s.cfg.Conversation.Summary.MaxCompletionTokens,
+	}
+
+	// Call LLM (non-streaming)
+	logger.Infof(ctx, "Calling LLM for interpretation with model: %s", modelID)
+	respChan, err := chatInstance.ChatStream(ctx, messages, chatOptions)
+	if err != nil {
+		logger.Errorf(ctx, "Failed to call LLM: %v", err)
+		return nil, err
+	}
+
+	// Collect the full response
+	var fullAnswer strings.Builder
+	for resp := range respChan {
+		if resp.Err != nil {
+			logger.Errorf(ctx, "Error in LLM response: %v", resp.Err)
+			return nil, resp.Err
+		}
+		fullAnswer.WriteString(resp.Content)
+	}
+
+	logger.Infof(ctx, "Knowledge interpretation completed, answer length: %d", fullAnswer.Len())
+
+	return &types.KnowledgeInterpretResponse{
+		Answer:  fullAnswer.String(),
+		Sources: sources,
+		Model:   modelID,
+		Success: true,
+	}, nil
+}

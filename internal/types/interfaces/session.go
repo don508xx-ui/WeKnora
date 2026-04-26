@@ -41,6 +41,9 @@ type SessionService interface {
 	// knowledgeBaseIDs: list of knowledge base IDs to search (supports multi-KB)
 	// knowledgeIDs: list of specific knowledge (file) IDs to search
 	SearchKnowledge(ctx context.Context, knowledgeBaseIDs []string, knowledgeIDs []string, query string) ([]*types.SearchResult, error)
+	// KnowledgeInterpret performs knowledge-based interpretation with LLM, returning a non-streaming formatted answer
+	// This is similar to what the frontend displays after AI processing
+	KnowledgeInterpret(ctx context.Context, knowledgeBaseIDs []string, knowledgeIDs []string, query string, modelID string) (*types.KnowledgeInterpretResponse, error)
 	// AgentQA performs agent-based question answering with conversation history and streaming support.
 	AgentQA(ctx context.Context, req *types.QARequest, eventBus *event.EventBus) error
 	// ClearContext clears the LLM context for a session
