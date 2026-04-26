@@ -164,62 +164,66 @@ func (g *pgRepository) KeywordsRetrieve(ctx context.Context,
 	params types.RetrieveParams,
 ) ([]*types.RetrieveResult, error) {
 	logger.GetLogger(ctx).Infof("[Postgres] Keywords retrieval: query=%s, topK=%d", params.Query, params.TopK)
-	conds := make([]clause.Expression, 0)
-
-	// KnowledgeBaseIDs and KnowledgeIDs use AND logic
-	// - If only KnowledgeBaseIDs: search entire knowledge bases
-	// - If only KnowledgeIDs: search specific documents
-	// - If both: search specific documents within the knowledge bases (AND)
+	
+	// Build WHERE conditions
+	whereParts := make([]string, 0)
+	allVars := make([]interface{}, 0)
+	
+	// Add query parameter for similarity search
+	allVars = append(allVars, params.Query)
+	
 	if len(params.KnowledgeBaseIDs) > 0 {
 		logger.GetLogger(ctx).Debugf("[Postgres] Filtering by knowledge base IDs: %v", params.KnowledgeBaseIDs)
-		conds = append(conds, clause.IN{
-			Column: "knowledge_base_id",
-			Values: common.ToInterfaceSlice(params.KnowledgeBaseIDs),
-		})
+		placeholders := make([]string, len(params.KnowledgeBaseIDs))
+		paramStart := len(allVars) + 1
+		for i := range params.KnowledgeBaseIDs {
+			placeholders[i] = fmt.Sprintf("$%d", paramStart+i)
+			allVars = append(allVars, params.KnowledgeBaseIDs[i])
+		}
+		whereParts = append(whereParts, fmt.Sprintf("knowledge_base_id IN (%s)", strings.Join(placeholders, ", ")))
 	}
 	if len(params.KnowledgeIDs) > 0 {
 		logger.GetLogger(ctx).Debugf("[Postgres] Filtering by knowledge IDs: %v", params.KnowledgeIDs)
-		conds = append(conds, clause.IN{
-			Column: "knowledge_id",
-			Values: common.ToInterfaceSlice(params.KnowledgeIDs),
-		})
+		placeholders := make([]string, len(params.KnowledgeIDs))
+		paramStart := len(allVars) + 1
+		for i := range params.KnowledgeIDs {
+			placeholders[i] = fmt.Sprintf("$%d", paramStart+i)
+			allVars = append(allVars, params.KnowledgeIDs[i])
+		}
+		whereParts = append(whereParts, fmt.Sprintf("knowledge_id IN (%s)", strings.Join(placeholders, ", ")))
 	}
-	// Filter by tag IDs if specified
 	if len(params.TagIDs) > 0 {
 		logger.GetLogger(ctx).Debugf("[Postgres] Filtering by tag IDs: %v", params.TagIDs)
-		conds = append(conds, clause.IN{
-			Column: "tag_id",
-			Values: common.ToInterfaceSlice(params.TagIDs),
-		})
+		placeholders := make([]string, len(params.TagIDs))
+		paramStart := len(allVars) + 1
+		for i := range params.TagIDs {
+			placeholders[i] = fmt.Sprintf("$%d", paramStart+i)
+			allVars = append(allVars, params.TagIDs[i])
+		}
+		whereParts = append(whereParts, fmt.Sprintf("tag_id IN (%s)", strings.Join(placeholders, ", ")))
 	}
-	conds = append(conds, clause.Expr{
-		SQL:  "id @@@ paradedb.match(field => 'content', value => ?, distance => 1)",
-		Vars: []interface{}{params.Query},
-	})
-	// Filter by is_enabled = true or NULL (NULL means enabled for historical data)
-	conds = append(conds, clause.Expr{
-		SQL:  "(is_enabled IS NULL OR is_enabled = ?)",
-		Vars: []interface{}{true},
-	})
-	conds = append(conds, clause.OrderBy{Columns: []clause.OrderByColumn{
-		{Column: clause.Column{Name: "score"}, Desc: true},
-	}})
-
+	
+	whereParts = append(whereParts, "(is_enabled IS NULL OR is_enabled = true)")
+	
+	whereClause := ""
+	if len(whereParts) > 0 {
+		whereClause = "WHERE " + strings.Join(whereParts, " AND ")
+	}
+	
+	querySQL := fmt.Sprintf(`
+		SELECT 
+			id, content, source_id, source_type, chunk_id, knowledge_id, knowledge_base_id, tag_id,
+			1 - (content <-> $1) as score
+		FROM embeddings
+		%s
+		ORDER BY content <-> $1
+		LIMIT $%d
+	`, whereClause, len(allVars)+1)
+	
+	allVars = append(allVars, int(params.TopK))
+	
 	var embeddingDBList []pgVectorWithScore
-	err := g.db.WithContext(ctx).Clauses(conds...).Debug().
-		Select([]string{
-			"paradedb.score(id) as score",
-			"id",
-			"content",
-			"source_id",
-			"source_type",
-			"chunk_id",
-			"knowledge_id",
-			"knowledge_base_id",
-			"tag_id",
-		}).
-		Limit(int(params.TopK)).
-		Find(&embeddingDBList).Error
+	err := g.db.WithContext(ctx).Raw(querySQL, allVars...).Scan(&embeddingDBList).Error
 
 	if err == gorm.ErrRecordNotFound {
 		logger.GetLogger(ctx).Warnf("[Postgres] No records found for keywords query: %s", params.Query)
@@ -265,7 +269,7 @@ func (g *pgRepository) VectorRetrieve(ctx context.Context,
 		len(params.Embedding), params.TopK, params.Threshold)
 
 	dimension := len(params.Embedding)
-	queryVector := pgvector.NewHalfVector(params.Embedding)
+	queryVector := pgvector.NewVector(params.Embedding)
 
 	// Build WHERE conditions for filtering
 	whereParts := make([]string, 0)
@@ -360,10 +364,10 @@ func (g *pgRepository) VectorRetrieve(ctx context.Context,
 		FROM (
 			SELECT 
 				id, content, source_id, source_type, chunk_id, knowledge_id, knowledge_base_id, tag_id,
-				embedding::halfvec(%d) <=> $1::halfvec as distance
+				embedding::vector(%d) <=> $1::vector as distance
 			FROM embeddings
 			%s
-			ORDER BY embedding::halfvec(%d) <=> $1::halfvec
+			ORDER BY embedding::vector(%d) <=> $1::vector
 			LIMIT $%d
 		) AS candidates
 		WHERE distance <= $%d
