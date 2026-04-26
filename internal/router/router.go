@@ -79,11 +79,6 @@ func NewRouter(params RouterParams) *gin.Engine {
 		MaxAge:           12 * time.Hour,
 	}))
 
-	// 设置 UTF-8 编码中间件
-	r.Use(func(c *gin.Context) {
-		c.Writer.Header().Set("Content-Type", "application/json; charset=utf-8")
-		c.Next()
-	})
 
 	// 基础中间件（不需要认证）
 	r.Use(middleware.RequestID())
