@@ -841,3 +841,134 @@ func (s *sessionService) resolveWebFetchTopN(req *types.QARequest) int {
 	}
 	return 3
 }
+
+// KnowledgeInterpret performs knowledge-based interpretation with LLM, returning a non-streaming formatted answer
+func (s *sessionService) KnowledgeInterpret(ctx context.Context,
+	knowledgeBaseIDs []string, knowledgeIDs []string, query string, modelID string,
+) (*types.KnowledgeInterpretResponse, error) {
+	logger.Info(ctx, "Start knowledge interpretation with LLM")
+	logger.Infof(ctx, "Knowledge interpret parameters, knowledge base IDs: %v, knowledge IDs: %v, query: %s, modelID: %s",
+		knowledgeBaseIDs, knowledgeIDs, query, modelID)
+
+	searchResults, err := s.SearchKnowledge(ctx, knowledgeBaseIDs, knowledgeIDs, query)
+	if err != nil {
+		logger.Errorf(ctx, "Failed to search knowledge: %v", err)
+		return nil, err
+	}
+
+	if len(searchResults) == 0 {
+		logger.Warn(ctx, "No search results found for interpretation")
+		return &types.KnowledgeInterpretResponse{
+			Answer:  "未找到相关知识，无法提供解读。",
+			Sources: []types.KnowledgeInterpretSource{},
+			Model:   modelID,
+			Success: true,
+		}, nil
+	}
+
+	sources := make([]types.KnowledgeInterpretSource, 0, len(searchResults))
+	for _, result := range searchResults {
+		sources = append(sources, types.KnowledgeInterpretSource{
+			Title:       result.KnowledgeTitle,
+			KnowledgeID: result.KnowledgeID,
+			ChunkIndex:  result.ChunkIndex,
+		})
+	}
+
+	var contextBuilder strings.Builder
+	contextTemplate := s.cfg.Conversation.Summary.ContextTemplate
+	if contextTemplate == "" {
+		contextTemplate = "基于以下参考资料回答问题：\n\n{{contexts}}\n\n问题：{{query}}"
+	}
+	
+	var contextContent strings.Builder
+	for i, result := range searchResults {
+		contextContent.WriteString(fmt.Sprintf("【资料%d】%s\n", i+1, result.KnowledgeTitle))
+		contextContent.WriteString(result.Content)
+		contextContent.WriteString("\n\n")
+	}
+	
+	contextStr := contextContent.String()
+	finalContext := strings.ReplaceAll(contextTemplate, "{{contexts}}", contextStr)
+	finalContext = strings.ReplaceAll(finalContext, "{{query}}", query)
+	contextBuilder.WriteString(finalContext)
+
+	if modelID == "" {
+		if len(knowledgeBaseIDs) > 0 {
+			kb, err := s.knowledgeBaseService.GetKnowledgeBaseByID(ctx, knowledgeBaseIDs[0])
+			if err == nil && kb != nil && kb.SummaryModelID != "" {
+				modelID = kb.SummaryModelID
+			}
+		}
+		if modelID == "" {
+			models, err := s.modelService.ListModels(ctx)
+			if err == nil {
+				for _, model := range models {
+					if model != nil && model.Type == types.ModelTypeKnowledgeQA {
+						modelID = model.ID
+						break
+					}
+				}
+			}
+		}
+	}
+
+	if modelID == "" {
+		return nil, fmt.Errorf("no model available for interpretation")
+	}
+
+	model, err := s.modelService.GetModelByID(ctx, modelID)
+	if err != nil {
+		logger.Errorf(ctx, "Failed to get model %s: %v", modelID, err)
+		return nil, err
+	}
+
+	chatInstance, err := chat.NewChat(&chat.ChatConfig{
+		ModelID:   model.ID,
+		APIKey:    model.Parameters.APIKey,
+		BaseURL:   model.Parameters.BaseURL,
+		ModelName: model.Name,
+		Source:    model.Source,
+		Provider:  model.Parameters.Provider,
+	}, nil)
+	if err != nil {
+		logger.Errorf(ctx, "Failed to create chat instance: %v", err)
+		return nil, err
+	}
+
+	systemPrompt := s.cfg.Conversation.Summary.Prompt
+	if systemPrompt == "" {
+		systemPrompt = "你是一个专业的知识解读助手。请根据提供的参考资料，直接给出结构清晰、内容完整的回答，不要展示分析过程。"
+	}
+	
+	messages := []chat.Message{
+		{Role: "system", Content: systemPrompt},
+		{Role: "user", Content: contextBuilder.String()},
+	}
+
+	chatOptions := &chat.ChatOptions{
+		Temperature:         s.cfg.Conversation.Summary.Temperature,
+		MaxCompletionTokens: s.cfg.Conversation.Summary.MaxCompletionTokens,
+	}
+
+	logger.Infof(ctx, "Calling LLM for interpretation with model: %s", modelID)
+	respChan, err := chatInstance.ChatStream(ctx, messages, chatOptions)
+	if err != nil {
+		logger.Errorf(ctx, "Failed to call LLM: %v", err)
+		return nil, err
+	}
+
+	var fullAnswer strings.Builder
+	for resp := range respChan {
+		fullAnswer.WriteString(resp.Content)
+	}
+
+	logger.Infof(ctx, "Knowledge interpretation completed, answer length: %d", fullAnswer.Len())
+
+	return &types.KnowledgeInterpretResponse{
+		Answer:  fullAnswer.String(),
+		Sources: sources,
+		Model:   modelID,
+		Success: true,
+	}, nil
+}

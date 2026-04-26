@@ -673,3 +673,57 @@ func (h *Handler) completeAssistantMessage(ctx context.Context, assistantMessage
 	bgCtx := context.WithoutCancel(ctx)
 	go h.messageService.IndexMessageToKB(bgCtx, userQuery, assistantMessage.Content, assistantMessage.ID, assistantMessage.SessionID)
 }
+
+// KnowledgeInterpret godoc
+// @Summary      Knowledge interpretation
+// @Description  Knowledge-based AI interpretation, returns non-streaming complete answer
+// @Tags         QA
+// @Accept       json
+// @Produce      json
+// @Param        request     body      KnowledgeInterpretRequest  true  "Interpretation request"
+// @Success      200         {object}  KnowledgeInterpretResponse "Interpretation result"
+// @Failure      400         {object}  errors.AppError            "Request parameter error"
+// @Security     Bearer
+// @Security     ApiKeyAuth
+// @Router       /knowledge-interpret [post]
+func (h *Handler) KnowledgeInterpret(c *gin.Context) {
+	ctx := logger.CloneContext(c.Request.Context())
+	logger.Info(ctx, "Start processing knowledge interpret request")
+
+	var request KnowledgeInterpretRequest
+	if err := c.ShouldBindJSON(&request); err != nil {
+		logger.Error(ctx, "Failed to parse request data", err)
+		c.Error(errors.NewBadRequestError(err.Error()))
+		return
+	}
+
+	if request.Query == "" {
+		logger.Error(ctx, "Query content is empty")
+		c.Error(errors.NewBadRequestError("Query content cannot be empty"))
+		return
+	}
+
+	if len(request.KnowledgeBaseIDs) == 0 && len(request.KnowledgeIDs) == 0 {
+		logger.Error(ctx, "No knowledge base IDs or knowledge IDs provided")
+		c.Error(errors.NewBadRequestError("At least one knowledge_base_ids or knowledge_ids must be provided"))
+		return
+	}
+
+	logger.Infof(
+		ctx,
+		"Knowledge interpret request, knowledge base IDs: %v, knowledge IDs: %v, query: %s",
+		secutils.SanitizeForLogArray(request.KnowledgeBaseIDs),
+		secutils.SanitizeForLogArray(request.KnowledgeIDs),
+		secutils.SanitizeForLog(request.Query),
+	)
+
+	result, err := h.sessionService.KnowledgeInterpret(ctx, request.KnowledgeBaseIDs, request.KnowledgeIDs, request.Query, request.ModelID)
+	if err != nil {
+		logger.ErrorWithFields(ctx, err, nil)
+		c.Error(errors.NewInternalServerError(err.Error()))
+		return
+	}
+
+	logger.Infof(ctx, "Knowledge interpret completed")
+	c.JSON(http.StatusOK, result)
+}

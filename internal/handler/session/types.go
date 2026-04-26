@@ -64,3 +64,19 @@ type SearchKnowledgeRequest struct {
 type StopSessionRequest struct {
 	MessageID string `json:"message_id" binding:"required"`
 }
+
+// KnowledgeInterpretRequest defines the request structure for knowledge interpretation with LLM
+type KnowledgeInterpretRequest struct {
+	Query            string   `json:"query"              binding:"required"`
+	KnowledgeBaseIDs []string `json:"knowledge_base_ids"`
+	KnowledgeIDs     []string `json:"knowledge_ids"`
+	ModelID          string   `json:"model_id"`
+}
+
+// KnowledgeInterpretResponse defines the response structure for knowledge interpretation
+type KnowledgeInterpretResponse struct {
+	Answer  string                      `json:"answer"`
+	Sources []types.KnowledgeInterpretSource `json:"sources"`
+	Model   string                      `json:"model"`
+	Success bool                        `json:"success"`
+}

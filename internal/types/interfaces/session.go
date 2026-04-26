@@ -45,6 +45,8 @@ type SessionService interface {
 	AgentQA(ctx context.Context, req *types.QARequest, eventBus *event.EventBus) error
 	// ClearContext clears the LLM context for a session
 	ClearContext(ctx context.Context, sessionID string) error
+	// KnowledgeInterpret performs knowledge-based interpretation and returns non-streaming response
+	KnowledgeInterpret(ctx context.Context, knowledgeBaseIDs []string, knowledgeIDs []string, query string, modelID string) (*types.KnowledgeInterpretResponse, error)
 }
 
 // SessionRepository defines the session repository interface
