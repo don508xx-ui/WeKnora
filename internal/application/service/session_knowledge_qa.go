@@ -1,6 +1,6 @@
 package service
 
-// Trigger deployment
+// Trigger deployment - v2
 
 import (
 	"context"
@@ -1057,17 +1057,22 @@ func (s *sessionService) KnowledgeInterpretStream(ctx context.Context,
 	}
 	
 	contextsStr := contextsBuilder.String()
-	
+
+	// Detect language from user query
+	detectedLang := detectLanguage(query)
+	logger.Infof(ctx, "Detected language: %s", detectedLang)
+
 	// 使用WeKnora的模板渲染函数
 	contextTemplate := s.cfg.Conversation.Summary.ContextTemplate
 	if contextTemplate == "" {
-		contextTemplate = "基于以下参考资料回答问题：\n\n{{contexts}}\n\n问题：{{query}}"
+		// 使用类似 WeKnora detailed_context 的模板，要求引用来源
+		contextTemplate = "## Task Description\nAnswer the user's question accurately and comprehensively based on the provided reference materials.\n\n## Reference Materials\n{{contexts}}\n\n## User Question\n{{query}}\n\n## Response Requirements\n1. Answer only based on reference materials, do not fabricate information\n2. If multiple materials conflict, provide a comprehensive analysis\n3. Cite sources appropriately by adding the source document name in 【】 after each factual claim, e.g., \"双子座好奇心强【星座第一书】\"\n4. If materials are insufficient, clearly state so\n\n## CRITICAL: Language Rule\n- ALWAYS respond in {{language}}"
 	}
-	
+
 	userContent := types.RenderPromptPlaceholders(contextTemplate, types.PlaceholderValues{
 		"query":    query,
 		"contexts": contextsStr,
-		"language": "zh",
+		"language": detectedLang,
 	})
 
 	if modelID == "" {
@@ -1112,10 +1117,6 @@ func (s *sessionService) KnowledgeInterpretStream(ctx context.Context,
 		logger.Errorf(ctx, "Failed to create chat instance: %v", err)
 		return nil, "", err
 	}
-
-	// Detect language from user query
-	detectedLang := detectLanguage(query)
-	logger.Infof(ctx, "Detected language: %s", detectedLang)
 
 	// 使用配置的system prompt，并渲染{{contexts}}变量
 	systemPrompt := s.cfg.Conversation.Summary.Prompt
