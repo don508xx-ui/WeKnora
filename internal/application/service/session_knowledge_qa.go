@@ -957,9 +957,9 @@ func (s *sessionService) KnowledgeInterpret(ctx context.Context,
 	// 使用配置的system prompt，并渲染{{contexts}}变量
 	systemPrompt := s.cfg.Conversation.Summary.Prompt
 	if systemPrompt == "" {
-		systemPrompt = "You are WeKnora, a professional intelligent information retrieval assistant. The following is retrieved information that may or may not be relevant:\n{{contexts}}\n\nPlease answer the user's question based on the retrieved information."
+		systemPrompt = "You are WeKnora, a professional intelligent information retrieval assistant. The following is retrieved information that may or may not be relevant:\n{{contexts}}\n\nPlease answer the user's question based on the retrieved information. Please use the same language as the user's question for both your thinking process and final answer."
 	}
-	
+
 	// 渲染system prompt中的{{contexts}}变量
 	renderedSystemPrompt := types.RenderPromptPlaceholders(systemPrompt, types.PlaceholderValues{
 		"contexts": contextsStr,
@@ -1117,15 +1117,15 @@ func (s *sessionService) KnowledgeInterpretStream(ctx context.Context,
 	// 使用配置的system prompt，并渲染{{contexts}}变量
 	systemPrompt := s.cfg.Conversation.Summary.Prompt
 	if systemPrompt == "" {
-		systemPrompt = "You are WeKnora, a professional intelligent information retrieval assistant. The following is retrieved information that may or may not be relevant:\n{{contexts}}\n\nPlease answer the user's question based on the retrieved information."
+		systemPrompt = "You are WeKnora, a professional intelligent information retrieval assistant. The following is retrieved information that may or may not be relevant:\n{{contexts}}\n\nPlease answer the user's question based on the retrieved information. Please use the same language as the user's question for both your thinking process and final answer."
 	}
-	
+
 	// 渲染system prompt中的{{contexts}}变量
 	renderedSystemPrompt := types.RenderPromptPlaceholders(systemPrompt, types.PlaceholderValues{
 		"contexts": contextsStr,
 		"language": detectedLang,
 	})
-	
+
 	messages := []chat.Message{
 		{Role: "system", Content: renderedSystemPrompt},
 		{Role: "user", Content: userContent},
