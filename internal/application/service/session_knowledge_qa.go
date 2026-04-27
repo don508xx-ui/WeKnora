@@ -988,6 +988,11 @@ Answer the user's question based ONLY on the retrieved information above. Use {{
 		"language": detectedLang,
 	})
 	
+	// DEBUG: 打印实际发送的system prompt
+	logger.Infof(ctx, "[DEBUG] System prompt length: %d", len(renderedSystemPrompt))
+	logger.Infof(ctx, "[DEBUG] System prompt preview: %s", renderedSystemPrompt[:min(500, len(renderedSystemPrompt))])
+	logger.Infof(ctx, "[DEBUG] Contexts content: %s", contextsStr[:min(500, len(contextsStr))])
+	
 	messages := []chat.Message{
 		{Role: "system", Content: renderedSystemPrompt},
 		{Role: "user", Content: userContent},
@@ -1311,6 +1316,14 @@ func (s *sessionService) KnowledgeInterpretStream(ctx context.Context,
 	}()
 
 	return sources, modelID, nil
+}
+
+// min returns the minimum of two integers
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
 
 // detectLanguage detects the language of the input text
