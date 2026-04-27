@@ -71,7 +71,14 @@ User question: %s
 
 Requirements:
 1. Answer based on the actually retrieved content
-2. Clearly cite information sources (chunk_id, document name)
+2. CLEARLY CITE INFORMATION SOURCES USING <kb doc="..." chunk_id="..." /> FORMAT (STRICTLY FOLLOW THE RULES BELOW)
+   - The citation tag must be placed ON THE SAME LINE as the last sentence of the paragraph it supports, NO LINE BREAK before it
+   - One citation per paragraph per source is enough
+   - NEVER group all citations at the bottom, distribute them inline throughout
+   - CORRECT EXAMPLE: 扩容业务影响时间由天级降低到分钟级。<kb doc="文档A" chunk_id="xxx" />
+   - WRONG EXAMPLE (line break): 
+     扩容业务影响时间由天级降低到分钟级。
+     <kb doc="文档A" chunk_id="xxx" />
 3. Organize the answer in a structured format
 4. If information is insufficient, honestly state so
 5. IMPORTANT: Respond in the same language as the user's question
