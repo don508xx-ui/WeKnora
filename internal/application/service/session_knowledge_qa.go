@@ -955,10 +955,6 @@ func (s *sessionService) KnowledgeInterpret(ctx context.Context,
 		return nil, err
 	}
 
-	// Detect language from user query
-	detectedLang := detectLanguage(query)
-	logger.Infof(ctx, "Detected language: %s", detectedLang)
-	
 	// 使用配置的system prompt，并渲染{{contexts}}变量
 	systemPrompt := s.cfg.Conversation.Summary.Prompt
 	if systemPrompt == "" {
