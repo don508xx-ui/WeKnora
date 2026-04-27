@@ -857,7 +857,7 @@ func (h *Handler) knowledgeInterpretStream(c *gin.Context, ctx context.Context, 
 
 	for {
 		select {
-		case <-c.Request.Context.Done():
+		case <-c.Request.Context().Done():
 			logger.Info(ctx, "Client disconnected during knowledge interpret")
 			return
 
