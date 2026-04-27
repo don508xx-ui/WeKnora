@@ -886,34 +886,23 @@ func (s *sessionService) KnowledgeInterpret(ctx context.Context,
 		}
 	}
 
+	// 构建contexts内容，完全复刻WeKnora的格式
 	var contextsBuilder strings.Builder
-
-	// 构建contexts内容，包含资料名称（使用<kb>标签格式便于AI识别）
 	for i, result := range searchResults {
 		if i > 0 {
 			contextsBuilder.WriteString("\n\n")
 		}
+		// 使用与WeKnora一致的格式，让AI明确知道来源
 		contextsBuilder.WriteString(fmt.Sprintf("[%d] Source: %s\n%s", i+1, result.KnowledgeTitle, result.Content))
 	}
-	
 	contextsStr := contextsBuilder.String()
 
 	// Detect language from user query
 	detectedLang := detectLanguage(query)
 	logger.Infof(ctx, "Detected language: %s", detectedLang)
 
-	// 使用WeKnora的模板渲染函数
-	contextTemplate := s.cfg.Conversation.Summary.ContextTemplate
-	if contextTemplate == "" {
-		// 使用类似 WeKnora detailed_context 的模板，要求引用来源
-		contextTemplate = "## Task Description\nAnswer the user's question accurately and comprehensively based on the provided reference materials.\n\n## Reference Materials\n{{contexts}}\n\n## User Question\n{{query}}\n\n## Response Requirements\n1. Answer only based on reference materials, do not fabricate information\n2. If multiple materials conflict, provide a comprehensive analysis\n3. Cite sources appropriately by adding the source document name in 【】 after each factual claim, e.g., \"双子座好奇心强【星座第一书】\"\n4. If materials are insufficient, clearly state so\n\n## CRITICAL: Language Rule\n- ALWAYS respond in {{language}}"
-	}
-
-	userContent := types.RenderPromptPlaceholders(contextTemplate, types.PlaceholderValues{
-		"query":    query,
-		"contexts": contextsStr,
-		"language": detectedLang,
-	})
+	// 构建user content，包含问题和上下文
+	userContent := fmt.Sprintf("Based on the following retrieved information, please answer my question.\n\nRetrieved Information:\n%s\n\nMy Question: %s", contextsStr, query)
 
 	if modelID == "" {
 		if len(knowledgeBaseIDs) > 0 {
@@ -961,40 +950,29 @@ func (s *sessionService) KnowledgeInterpret(ctx context.Context,
 	// 使用配置的system prompt，并渲染{{contexts}}变量
 	systemPrompt := s.cfg.Conversation.Summary.Prompt
 	if systemPrompt == "" {
-		systemPrompt = `You are WeKnora, a professional intelligent information retrieval assistant. Answer based on the retrieved information below.
-
-### Retrieved Information:
-{{contexts}}
+		systemPrompt = `You are WeKnora, a professional intelligent information retrieval assistant.
 
 ### Final Output Standards (STRICT):
 *   **Sourced (Inline Citations):** EVERY factual claim must be cited using <kb doc="DOCUMENT_NAME" /> format.
     **Citation rules (ABSOLUTE):**
     - The citation tag must be placed ON THE SAME LINE as the last sentence of the paragraph it supports, with NO line break before it.
-    - The DOCUMENT_NAME must match exactly with the "Source: XXX" labels in the Retrieved Information above.
+    - The DOCUMENT_NAME must match exactly with the "Source: XXX" labels in the retrieved information.
     - Do NOT repeat the same citation after every sentence. One citation per paragraph per source is enough.
     - NEVER group all citations at the bottom of the answer. They must be distributed inline throughout the text.
     - CORRECT: 太阳星座代表核心自我。<kb doc="当代占星研究" />
     - WRONG (line break before tag):
       太阳星座代表核心自我。
-      <kb doc="当代占星研究" />
-
-### Task:
-Answer the user's question based ONLY on the retrieved information above. Use {{language}}.`
+      <kb doc="当代占星研究" />`
 	}
 
-	// 渲染system prompt中的{{contexts}}变量
-	renderedSystemPrompt := types.RenderPromptPlaceholders(systemPrompt, types.PlaceholderValues{
-		"contexts": contextsStr,
-		"language": detectedLang,
-	})
-	
-	// DEBUG: 打印实际发送的system prompt
-	logger.Infof(ctx, "[DEBUG] System prompt length: %d", len(renderedSystemPrompt))
-	logger.Infof(ctx, "[DEBUG] System prompt preview: %s", renderedSystemPrompt[:min(500, len(renderedSystemPrompt))])
-	logger.Infof(ctx, "[DEBUG] Contexts content: %s", contextsStr[:min(500, len(contextsStr))])
+	// DEBUG: 打印实际发送的内容
+	logger.Infof(ctx, "[DEBUG] System prompt length: %d", len(systemPrompt))
+	logger.Infof(ctx, "[DEBUG] System prompt: %s", systemPrompt)
+	logger.Infof(ctx, "[DEBUG] User content length: %d", len(userContent))
+	logger.Infof(ctx, "[DEBUG] User content preview: %s", userContent[:min(500, len(userContent))])
 	
 	messages := []chat.Message{
-		{Role: "system", Content: renderedSystemPrompt},
+		{Role: "system", Content: systemPrompt},
 		{Role: "user", Content: userContent},
 	}
 
