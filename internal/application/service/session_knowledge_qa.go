@@ -1200,7 +1200,6 @@ func (s *sessionService) KnowledgeInterpretStream(ctx context.Context,
 	// Process streaming responses
 	go func() {
 		var thinkingStarted bool
-		var finalAnswer strings.Builder
 
 		for resp := range respChan {
 			select {
@@ -1211,32 +1210,6 @@ func (s *sessionService) KnowledgeInterpretStream(ctx context.Context,
 			}
 
 			content := resp.Content
-
-			// Check for tool calls - extract answer from final_answer tool
-			if len(resp.ToolCalls) > 0 {
-				for _, tc := range resp.ToolCalls {
-					if tc.Function.Name == "final_answer" {
-						// Parse the answer from tool call arguments
-						var args map[string]interface{}
-						if err := json.Unmarshal([]byte(tc.Function.Arguments), &args); err == nil {
-							if answer, ok := args["answer"].(string); ok && answer != "" {
-								finalAnswer.WriteString(answer)
-								eventBus.Emit(ctx, event.Event{
-									ID:        requestID,
-									Type:      event.EventAgentFinalAnswer,
-									SessionID: requestID,
-									Data: event.AgentFinalAnswerData{
-										Content: answer,
-										Done:    resp.Done,
-									},
-								})
-							}
-						}
-					}
-				}
-				continue
-			}
-
 			if content == "" && !resp.Done {
 				continue
 			}
