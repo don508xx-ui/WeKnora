@@ -905,7 +905,7 @@ func (s *sessionService) KnowledgeInterpret(ctx context.Context,
 	contextTemplate := s.cfg.Conversation.Summary.ContextTemplate
 	if contextTemplate == "" {
 		// 使用类似 WeKnora detailed_context 的模板，要求引用来源
-		contextTemplate = "## Task Description\nAnswer the user's question accurately and comprehensively based on the provided reference materials.\n\n## Reference Materials\n{{contexts}}\n\n## User Question\n{{query}}\n\n## Response Requirements\n1. Answer only based on reference materials, do not fabricate information\n2. If multiple materials conflict, provide a comprehensive analysis\n3. Cite sources appropriately using the source markers (e.g., [1], [2]) to enhance credibility\n4. If materials are insufficient, clearly state so\n\n## CRITICAL: Language Rule\n- ALWAYS respond in {{language}}"
+		contextTemplate = "## Task Description\nAnswer the user's question accurately and comprehensively based on the provided reference materials.\n\n## Reference Materials\n{{contexts}}\n\n## User Question\n{{query}}\n\n## Response Requirements\n1. Answer only based on reference materials, do not fabricate information\n2. If multiple materials conflict, provide a comprehensive analysis\n3. Cite sources appropriately by adding the source document name in 【】 after each factual claim, e.g., \"双子座好奇心强【星座第一书】\"\n4. If materials are insufficient, clearly state so\n\n## CRITICAL: Language Rule\n- ALWAYS respond in {{language}}"
 	}
 
 	userContent := types.RenderPromptPlaceholders(contextTemplate, types.PlaceholderValues{
