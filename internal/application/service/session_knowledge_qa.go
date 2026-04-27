@@ -971,12 +971,15 @@ func (s *sessionService) KnowledgeInterpret(ctx context.Context,
 		{Role: "user", Content: userContent},
 	}
 
+	// Enable thinking mode if supported by the model
+	thinking := true
 	chatOptions := &chat.ChatOptions{
 		Temperature:         s.cfg.Conversation.Summary.Temperature,
 		MaxCompletionTokens: s.cfg.Conversation.Summary.MaxCompletionTokens,
+		Thinking:            &thinking,
 	}
 
-	logger.Infof(ctx, "Calling LLM for interpretation with model: %s", modelID)
+	logger.Infof(ctx, "Calling LLM for interpretation with model: %s, thinking enabled", modelID)
 	respChan, err := chatInstance.ChatStream(ctx, messages, chatOptions)
 	if err != nil {
 		logger.Errorf(ctx, "Failed to call LLM: %v", err)
@@ -985,7 +988,10 @@ func (s *sessionService) KnowledgeInterpret(ctx context.Context,
 
 	var fullAnswer strings.Builder
 	for resp := range respChan {
-		fullAnswer.WriteString(resp.Content)
+		// Only accumulate answer content, skip thinking content for non-streaming response
+		if resp.ResponseType == types.ResponseTypeAnswer {
+			fullAnswer.WriteString(resp.Content)
+		}
 	}
 
 	logger.Infof(ctx, "Knowledge interpretation completed, answer length: %d", fullAnswer.Len())
@@ -1125,12 +1131,15 @@ func (s *sessionService) KnowledgeInterpretStream(ctx context.Context,
 		{Role: "user", Content: userContent},
 	}
 
+	// Enable thinking mode if supported by the model
+	thinking := true
 	chatOptions := &chat.ChatOptions{
 		Temperature:         s.cfg.Conversation.Summary.Temperature,
 		MaxCompletionTokens: s.cfg.Conversation.Summary.MaxCompletionTokens,
+		Thinking:            &thinking,
 	}
 
-	logger.Infof(ctx, "Calling LLM for streaming interpretation with model: %s", modelID)
+	logger.Infof(ctx, "Calling LLM for streaming interpretation with model: %s, thinking enabled", modelID)
 	respChan, err := chatInstance.ChatStream(ctx, messages, chatOptions)
 	if err != nil {
 		logger.Errorf(ctx, "Failed to call LLM: %v", err)
@@ -1150,7 +1159,6 @@ func (s *sessionService) KnowledgeInterpretStream(ctx context.Context,
 	// Process streaming responses
 	go func() {
 		var thinkingStarted bool
-		var answerStarted bool
 
 		for resp := range respChan {
 			select {
@@ -1161,42 +1169,36 @@ func (s *sessionService) KnowledgeInterpretStream(ctx context.Context,
 			}
 
 			content := resp.Content
-			if content == "" {
+			if content == "" && !resp.Done {
 				continue
 			}
 
-			// Try to detect if this is thinking content or answer content
-			// Check for thinking indicators
-			isThinking := false
-			if !answerStarted {
-				if strings.Contains(content, "Analyze") || strings.Contains(content, "Formulate") ||
-					strings.Contains(content, "思考") || strings.Contains(content, "分析") ||
-					strings.HasPrefix(content, "<think>") {
-					isThinking = true
-					if !thinkingStarted {
-						thinkingStarted = true
-					}
-				}
-			}
-
-			// If we've started thinking and now see content that looks like answer
-			if thinkingStarted && !answerStarted && !isThinking {
-				answerStarted = true
-			}
-
-			if isThinking {
-				// Send thinking content using EventAgentThought
+			// Use ResponseType to determine if this is thinking or answer content
+			// This is the correct WeKnora logic
+			switch resp.ResponseType {
+			case types.ResponseTypeThinking:
+				thinkingStarted = true
 				eventBus.Emit(ctx, event.Event{
 					ID:        requestID,
 					Type:      event.EventAgentThought,
 					SessionID: requestID,
 					Data: event.AgentThoughtData{
 						Content: content,
-						Done:    false,
+						Done:    resp.Done,
 					},
 				})
-			} else {
-				// Send answer content using EventAgentFinalAnswer
+			case types.ResponseTypeAnswer:
+				eventBus.Emit(ctx, event.Event{
+					ID:        requestID,
+					Type:      event.EventAgentFinalAnswer,
+					SessionID: requestID,
+					Data: event.AgentFinalAnswerData{
+						Content: content,
+						Done:    resp.Done,
+					},
+				})
+			default:
+				// For unknown response types, treat as answer
 				eventBus.Emit(ctx, event.Event{
 					ID:        requestID,
 					Type:      event.EventAgentFinalAnswer,
@@ -1209,7 +1211,7 @@ func (s *sessionService) KnowledgeInterpretStream(ctx context.Context,
 			}
 		}
 
-		// Send done event for thinking
+		// Send done event for thinking if it was started
 		if thinkingStarted {
 			eventBus.Emit(ctx, event.Event{
 				ID:        requestID,
