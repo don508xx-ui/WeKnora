@@ -47,6 +47,8 @@ type SessionService interface {
 	ClearContext(ctx context.Context, sessionID string) error
 	// KnowledgeInterpret performs knowledge-based interpretation and returns non-streaming response
 	KnowledgeInterpret(ctx context.Context, knowledgeBaseIDs []string, knowledgeIDs []string, query string, modelID string) (*types.KnowledgeInterpretResponse, error)
+	// KnowledgeInterpretStream performs knowledge-based interpretation and returns streaming response via eventBus
+	KnowledgeInterpretStream(ctx context.Context, knowledgeBaseIDs []string, knowledgeIDs []string, query string, modelID string, eventBus *event.EventBus, requestID string) ([]types.KnowledgeInterpretSource, string, error)
 }
 
 // SessionRepository defines the session repository interface

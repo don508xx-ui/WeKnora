@@ -71,6 +71,7 @@ type KnowledgeInterpretRequest struct {
 	KnowledgeBaseIDs []string `json:"knowledge_base_ids"`
 	KnowledgeIDs     []string `json:"knowledge_ids"`
 	ModelID          string   `json:"model_id"`
+	Stream           bool     `json:"stream"` // Whether to return streaming response
 }
 
 // KnowledgeInterpretResponse defines the response structure for knowledge interpretation

@@ -985,3 +985,244 @@ func (s *sessionService) KnowledgeInterpret(ctx context.Context,
 		Success: true,
 	}, nil
 }
+
+// KnowledgeInterpretStream performs knowledge-based interpretation with LLM, returning streaming response
+func (s *sessionService) KnowledgeInterpretStream(ctx context.Context,
+	knowledgeBaseIDs []string, knowledgeIDs []string, query string, modelID string,
+	eventBus *event.EventBus, requestID string,
+) ([]types.KnowledgeInterpretSource, string, error) {
+	logger.Info(ctx, "Start streaming knowledge interpretation with LLM")
+	logger.Infof(ctx, "Knowledge interpret parameters, knowledge base IDs: %v, knowledge IDs: %v, query: %s, modelID: %s",
+		knowledgeBaseIDs, knowledgeIDs, query, modelID)
+
+	searchResults, err := s.SearchKnowledge(ctx, knowledgeBaseIDs, knowledgeIDs, query)
+	if err != nil {
+		logger.Errorf(ctx, "Failed to search knowledge: %v", err)
+		return nil, "", err
+	}
+
+	if len(searchResults) == 0 {
+		logger.Warn(ctx, "No search results found for interpretation")
+		// Send empty answer event
+		eventBus.Emit(ctx, event.Event{
+			ID:        requestID,
+			Type:      event.EventAgentFinalAnswer,
+			SessionID: requestID,
+			Data: event.AgentFinalAnswerData{
+				Content: "未找到相关知识，无法提供解读。",
+				Done:    true,
+			},
+		})
+		return []types.KnowledgeInterpretSource{}, modelID, nil
+	}
+
+	sources := make([]types.KnowledgeInterpretSource, 0, len(searchResults))
+	for _, result := range searchResults {
+		sources = append(sources, types.KnowledgeInterpretSource{
+			Title:       result.KnowledgeTitle,
+			KnowledgeID: result.KnowledgeID,
+			ChunkIndex:  result.ChunkIndex,
+		})
+	}
+
+	var contextsBuilder strings.Builder
+	
+	// 构建contexts内容
+	for i, result := range searchResults {
+		if i > 0 {
+			contextsBuilder.WriteString("\n\n")
+		}
+		contextsBuilder.WriteString(fmt.Sprintf("[%d] %s", i+1, result.Content))
+	}
+	
+	contextsStr := contextsBuilder.String()
+	
+	// 使用WeKnora的模板渲染函数
+	contextTemplate := s.cfg.Conversation.Summary.ContextTemplate
+	if contextTemplate == "" {
+		contextTemplate = "基于以下参考资料回答问题：\n\n{{contexts}}\n\n问题：{{query}}"
+	}
+	
+	userContent := types.RenderPromptPlaceholders(contextTemplate, types.PlaceholderValues{
+		"query":    query,
+		"contexts": contextsStr,
+		"language": "zh",
+	})
+
+	if modelID == "" {
+		if len(knowledgeBaseIDs) > 0 {
+			kb, err := s.knowledgeBaseService.GetKnowledgeBaseByID(ctx, knowledgeBaseIDs[0])
+			if err == nil && kb != nil && kb.SummaryModelID != "" {
+				modelID = kb.SummaryModelID
+			}
+		}
+		if modelID == "" {
+			models, err := s.modelService.ListModels(ctx)
+			if err == nil {
+				for _, model := range models {
+					if model != nil && model.Type == types.ModelTypeKnowledgeQA {
+						modelID = model.ID
+						break
+					}
+				}
+			}
+		}
+	}
+
+	if modelID == "" {
+		return nil, "", fmt.Errorf("no model available for interpretation")
+	}
+
+	model, err := s.modelService.GetModelByID(ctx, modelID)
+	if err != nil {
+		logger.Errorf(ctx, "Failed to get model %s: %v", modelID, err)
+		return nil, "", err
+	}
+
+	chatInstance, err := chat.NewChat(&chat.ChatConfig{
+		ModelID:   model.ID,
+		APIKey:    model.Parameters.APIKey,
+		BaseURL:   model.Parameters.BaseURL,
+		ModelName: model.Name,
+		Source:    model.Source,
+		Provider:  model.Parameters.Provider,
+	}, nil)
+	if err != nil {
+		logger.Errorf(ctx, "Failed to create chat instance: %v", err)
+		return nil, "", err
+	}
+
+	// 使用配置的system prompt，并渲染{{contexts}}变量
+	systemPrompt := s.cfg.Conversation.Summary.Prompt
+	if systemPrompt == "" {
+		systemPrompt = "You are WeKnora, a professional intelligent information retrieval assistant. The following is retrieved information that may or may not be relevant:\n{{contexts}}\n\nPlease answer the user's question based on the retrieved information."
+	}
+	
+	// 渲染system prompt中的{{contexts}}变量
+	renderedSystemPrompt := types.RenderPromptPlaceholders(systemPrompt, types.PlaceholderValues{
+		"contexts": contextsStr,
+		"language": "zh-CN",
+	})
+	
+	messages := []chat.Message{
+		{Role: "system", Content: renderedSystemPrompt},
+		{Role: "user", Content: userContent},
+	}
+
+	chatOptions := &chat.ChatOptions{
+		Temperature:         s.cfg.Conversation.Summary.Temperature,
+		MaxCompletionTokens: s.cfg.Conversation.Summary.MaxCompletionTokens,
+	}
+
+	logger.Infof(ctx, "Calling LLM for streaming interpretation with model: %s", modelID)
+	respChan, err := chatInstance.ChatStream(ctx, messages, chatOptions)
+	if err != nil {
+		logger.Errorf(ctx, "Failed to call LLM: %v", err)
+		eventBus.Emit(ctx, event.Event{
+			ID:        requestID,
+			Type:      event.EventError,
+			SessionID: requestID,
+			Data: event.ErrorData{
+				Error:     err.Error(),
+				Stage:     "model_call",
+				SessionID: requestID,
+			},
+		})
+		return nil, "", err
+	}
+
+	// Process streaming responses
+	go func() {
+		var thinkingStarted bool
+		var thinkingContent strings.Builder
+		var answerStarted bool
+
+		for resp := range respChan {
+			select {
+			case <-ctx.Done():
+				logger.Info(ctx, "Context cancelled, stopping stream")
+				return
+			default:
+			}
+
+			content := resp.Content
+			if content == "" {
+				continue
+			}
+
+			// Try to detect if this is thinking content or answer content
+			// Check for thinking indicators
+			isThinking := false
+			if !answerStarted {
+				if strings.Contains(content, "Analyze") || strings.Contains(content, "Formulate") ||
+					strings.Contains(content, "思考") || strings.Contains(content, "分析") ||
+					strings.HasPrefix(content, "<think>") {
+					isThinking = true
+					if !thinkingStarted {
+						thinkingStarted = true
+					}
+				}
+			}
+
+			// If we've started thinking and now see content that looks like answer
+			if thinkingStarted && !answerStarted && !isThinking {
+				// First, send the accumulated thinking content
+				if thinkingContent.Len() > 0 {
+					eventBus.Emit(ctx, event.Event{
+						ID:        requestID,
+						Type:      event.EventAgentFinalAnswer,
+						SessionID: requestID,
+						Data: event.AgentFinalAnswerData{
+							Content: "<think>" + thinkingContent.String() + "</think>\n",
+							Done:    false,
+						},
+					})
+				}
+				answerStarted = true
+			}
+
+			if isThinking {
+				thinkingContent.WriteString(content)
+			} else {
+				// Send answer content
+				eventBus.Emit(ctx, event.Event{
+					ID:        requestID,
+					Type:      event.EventAgentFinalAnswer,
+					SessionID: requestID,
+					Data: event.AgentFinalAnswerData{
+						Content: content,
+						Done:    resp.Done,
+					},
+				})
+			}
+		}
+
+		// If there's remaining thinking content and no answer started, send it
+		if thinkingContent.Len() > 0 && !answerStarted {
+			eventBus.Emit(ctx, event.Event{
+				ID:        requestID,
+				Type:      event.EventAgentFinalAnswer,
+				SessionID: requestID,
+				Data: event.AgentFinalAnswerData{
+					Content: "<think>" + thinkingContent.String() + "</think>",
+					Done:    true,
+				},
+			})
+		}
+
+		// Make sure we send done event if not already sent
+		eventBus.Emit(ctx, event.Event{
+			ID:        requestID,
+			Type:      event.EventAgentFinalAnswer,
+			SessionID: requestID,
+			Data: event.AgentFinalAnswerData{
+				Content: "",
+				Done:    true,
+			},
+		})
+
+		logger.Infof(ctx, "Streaming knowledge interpretation completed")
+	}()
+
+	return sources, modelID, nil
+}

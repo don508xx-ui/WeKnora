@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"runtime"
+	"strings"
 	"time"
 
 	"github.com/Tencent/WeKnora/internal/errors"
@@ -676,12 +677,12 @@ func (h *Handler) completeAssistantMessage(ctx context.Context, assistantMessage
 
 // KnowledgeInterpret godoc
 // @Summary      Knowledge interpretation
-// @Description  Knowledge-based AI interpretation, returns non-streaming complete answer
+// @Description  Knowledge-based AI interpretation, supports both streaming and non-streaming response
 // @Tags         QA
 // @Accept       json
-// @Produce      json
+// @Produce      json,text/event-stream
 // @Param        request     body      KnowledgeInterpretRequest  true  "Interpretation request"
-// @Success      200         {object}  KnowledgeInterpretResponse "Interpretation result"
+// @Success      200         {object}  KnowledgeInterpretResponse "Interpretation result (non-streaming)"
 // @Failure      400         {object}  errors.AppError            "Request parameter error"
 // @Security     Bearer
 // @Security     ApiKeyAuth
@@ -711,19 +712,189 @@ func (h *Handler) KnowledgeInterpret(c *gin.Context) {
 
 	logger.Infof(
 		ctx,
-		"Knowledge interpret request, knowledge base IDs: %v, knowledge IDs: %v, query: %s",
+		"Knowledge interpret request, knowledge base IDs: %v, knowledge IDs: %v, query: %s, stream: %v",
 		secutils.SanitizeForLogArray(request.KnowledgeBaseIDs),
 		secutils.SanitizeForLogArray(request.KnowledgeIDs),
 		secutils.SanitizeForLog(request.Query),
+		request.Stream,
 	)
 
-	result, err := h.sessionService.KnowledgeInterpret(ctx, request.KnowledgeBaseIDs, request.KnowledgeIDs, request.Query, request.ModelID)
-	if err != nil {
-		logger.ErrorWithFields(ctx, err, nil)
-		c.Error(errors.NewInternalServerError(err.Error()))
-		return
+	// Check if streaming is requested
+	if request.Stream {
+		h.knowledgeInterpretStream(c, ctx, &request)
+	} else {
+		// Non-streaming version (keep backward compatibility)
+		result, err := h.sessionService.KnowledgeInterpret(ctx, request.KnowledgeBaseIDs, request.KnowledgeIDs, request.Query, request.ModelID)
+		if err != nil {
+			logger.ErrorWithFields(ctx, err, nil)
+			c.Error(errors.NewInternalServerError(err.Error()))
+			return
+		}
+
+		logger.Infof(ctx, "Knowledge interpret completed")
+		c.JSON(http.StatusOK, result)
+	}
+}
+
+// knowledgeInterpretStream handles streaming knowledge interpretation
+func (h *Handler) knowledgeInterpretStream(c *gin.Context, ctx context.Context, request *KnowledgeInterpretRequest) {
+	// Create a unique request ID
+	requestID := secutils.SanitizeForLog(c.GetString(types.RequestIDContextKey.String()))
+	if requestID == "" {
+		requestID = fmt.Sprintf("interpret-%d", time.Now().UnixNano())
 	}
 
-	logger.Infof(ctx, "Knowledge interpret completed")
-	c.JSON(http.StatusOK, result)
+	// Set SSE headers
+	setSSEHeaders(c)
+
+	// Create EventBus
+	eventBus := event.NewEventBus()
+
+	// Create cancellable context
+	asyncCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	// Setup stop event handler
+	setupStopEventHandlerSimple(eventBus, cancel)
+
+	// Channel to collect sources
+	sourcesChan := make(chan []types.KnowledgeInterpretSource, 1)
+	// Channel to collect model ID
+	modelIDChan := make(chan string, 1)
+	// Channel for errors
+	errChan := make(chan error, 1)
+
+	// Start streaming in goroutine
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				buf := make([]byte, 10240)
+				runtime.Stack(buf, true)
+				logger.ErrorWithFields(asyncCtx, fmt.Errorf("panic: %v", r), nil)
+				errChan <- errors.NewInternalServerError("Internal server error")
+			}
+		}()
+
+		// Call streaming version of KnowledgeInterpret
+		sources, modelID, err := h.sessionService.KnowledgeInterpretStream(
+			asyncCtx,
+			request.KnowledgeBaseIDs,
+			request.KnowledgeIDs,
+			request.Query,
+			request.ModelID,
+			eventBus,
+			requestID,
+		)
+
+		if err != nil {
+			errChan <- err
+			return
+		}
+
+		sourcesChan <- sources
+		modelIDChan <- modelID
+	}()
+
+	// Handle events for streaming
+	var sources []types.KnowledgeInterpretSource
+	var modelID string
+	var finalErr error
+
+	// Function to send event
+	sendEvent := func(eventType string, content string, done bool) {
+		response := &types.StreamResponse{
+			ID:           requestID,
+			ResponseType: types.ResponseType(eventType),
+			Content:      content,
+			Done:         done,
+		}
+		c.SSEvent("message", response)
+		c.Writer.Flush()
+	}
+
+	// First, send sources event
+	sendSources := func() {
+		sourceData := map[string]interface{}{
+			"sources": sources,
+			"model":   modelID,
+		}
+		sourcesJson, _ := json.Marshal(sourceData)
+		sendEvent("sources", string(sourcesJson), false)
+	}
+
+	// Subscribe to events from EventBus
+	eventBus.On(event.EventAgentFinalAnswer, func(eventCtx context.Context, evt event.Event) error {
+		data, ok := evt.Data.(event.AgentFinalAnswerData)
+		if !ok {
+			return nil
+		}
+
+		responseType := "answer"
+		// Try to detect if this is thinking content
+		if strings.HasPrefix(data.Content, "<think>") || strings.Contains(data.Content, "Analyze the Request") || strings.Contains(data.Content, "Formulate the Response") {
+			responseType = "thinking"
+		}
+
+		sendEvent(responseType, data.Content, data.Done)
+		return nil
+	})
+
+	// Subscribe to error events
+	eventBus.On(event.EventError, func(eventCtx context.Context, evt event.Event) error {
+		data, ok := evt.Data.(event.ErrorData)
+		if !ok {
+			return nil
+		}
+
+		sendEvent("error", data.Error, true)
+		finalErr = errors.NewInternalServerError(data.Error)
+		return nil
+	})
+
+	// Poll for results and wait for completion
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-c.Request.Context.Done():
+			logger.Info(ctx, "Client disconnected during knowledge interpret")
+			return
+
+		case <-ticker.C:
+			// Check for results
+			select {
+			case srcs := <-sourcesChan:
+				sources = srcs
+				if modelID != "" {
+					sendSources()
+				}
+			case mid := <-modelIDChan:
+				modelID = mid
+				if sources != nil {
+					sendSources()
+				}
+			case err := <-errChan:
+				finalErr = err
+				if finalErr != nil {
+					sendEvent("error", finalErr.Error(), true)
+				}
+				return
+			default:
+				// No new results, continue
+			}
+
+		// Check if both sources and model ID are received, and we haven't sent them yet
+		// We'll let the event handlers handle the streaming content
+		}
+	}
+}
+
+// setupStopEventHandlerSimple sets up a simple stop event handler
+func setupStopEventHandlerSimple(eventBus *event.EventBus, cancel context.CancelFunc) {
+	eventBus.On(event.EventStop, func(ctx context.Context, evt event.Event) error {
+		logger.Info(ctx, "Stop event received, cancelling context")
+		cancel()
+		return nil
+	})
 }
