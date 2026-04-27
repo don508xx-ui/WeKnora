@@ -26,7 +26,7 @@ func (s *sessionService) KnowledgeQA(
 			ID:   "default-knowledge-qa",
 			Name: "Default Knowledge QA",
 			Config: types.CustomAgentConfig{
-				AgentMode:        true, // 启用Agent模式
+				AgentMode:        "smart-reasoning", // 启用Agent模式
 				MaxIterations:    5,
 				Temperature:      0.7,
 				WebSearchEnabled: req.WebSearchEnabled,
@@ -38,7 +38,7 @@ func (s *sessionService) KnowledgeQA(
 	}
 
 	// 确保Agent模式启用
-	req.CustomAgent.Config.AgentMode = true
+	req.CustomAgent.Config.AgentMode = "smart-reasoning"
 
 	// 直接调用AgentQA - 完全复用WeKnora的Agent实现
 	logger.Infof(ctx, "Delegating KnowledgeQA to AgentQA for session: %s", sessionID)
