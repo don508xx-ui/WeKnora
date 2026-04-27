@@ -1012,6 +1012,22 @@ func (s *sessionService) KnowledgeInterpret(ctx context.Context,
 
 	var fullAnswer strings.Builder
 	for resp := range respChan {
+		// Check for tool calls - extract answer from final_answer tool
+		if len(resp.ToolCalls) > 0 {
+			for _, tc := range resp.ToolCalls {
+				if tc.Function.Name == "final_answer" {
+					// Parse the answer from tool call arguments
+					var args map[string]interface{}
+					if err := json.Unmarshal([]byte(tc.Function.Arguments), &args); err == nil {
+						if answer, ok := args["answer"].(string); ok && answer != "" {
+							fullAnswer.WriteString(answer)
+						}
+					}
+				}
+			}
+			continue
+		}
+
 		// Only accumulate answer content, skip thinking content for non-streaming response
 		if resp.ResponseType == types.ResponseTypeAnswer {
 			fullAnswer.WriteString(resp.Content)
