@@ -640,32 +640,11 @@ func (s *sessionService) SearchKnowledge(ctx context.Context,
 		logger.Infof(ctx, "Event %v triggered successfully", event)
 	}
 
-	logger.Infof(ctx, "Knowledge base search completed, found %d results before deduplication", len(chatManage.MergeResult))
+	logger.Infof(ctx, "Knowledge base search completed, found %d results", len(chatManage.MergeResult))
 
-	// Deduplicate by KnowledgeID to ensure each document appears only once
-	deduplicatedResults := deduplicateByKnowledgeID(chatManage.MergeResult)
-	logger.Infof(ctx, "After deduplication by KnowledgeID: %d results", len(deduplicatedResults))
-
-	return deduplicatedResults, nil
-}
-
-// deduplicateByKnowledgeID removes duplicate search results based on KnowledgeID,
-// keeping only the first (highest scored) result for each knowledge document.
-func deduplicateByKnowledgeID(results []*types.SearchResult) []*types.SearchResult {
-	seen := make(map[string]bool)
-	deduplicated := make([]*types.SearchResult, 0)
-
-	for _, result := range results {
-		if result == nil {
-			continue
-		}
-		if !seen[result.KnowledgeID] {
-			seen[result.KnowledgeID] = true
-			deduplicated = append(deduplicated, result)
-		}
-	}
-
-	return deduplicated
+	// Return all search results without deduplication to preserve complete context
+	// WeKnora original logic: keep all chunks for comprehensive AI analysis
+	return chatManage.MergeResult, nil
 }
 
 // handleFallbackResponse handles fallback response based on strategy
@@ -890,13 +869,18 @@ func (s *sessionService) KnowledgeInterpret(ctx context.Context,
 		}, nil
 	}
 
-	sources := make([]types.KnowledgeInterpretSource, 0, len(searchResults))
+	// Build sources list, deduplicate by KnowledgeID for clean display
+	sources := make([]types.KnowledgeInterpretSource, 0)
+	seenKnowledgeIDs := make(map[string]bool)
 	for _, result := range searchResults {
-		sources = append(sources, types.KnowledgeInterpretSource{
-			Title:       result.KnowledgeTitle,
-			KnowledgeID: result.KnowledgeID,
-			ChunkIndex:  result.ChunkIndex,
-		})
+		if !seenKnowledgeIDs[result.KnowledgeID] {
+			seenKnowledgeIDs[result.KnowledgeID] = true
+			sources = append(sources, types.KnowledgeInterpretSource{
+				Title:       result.KnowledgeTitle,
+				KnowledgeID: result.KnowledgeID,
+				ChunkIndex:  result.ChunkIndex,
+			})
+		}
 	}
 
 	var contextsBuilder strings.Builder
@@ -966,6 +950,10 @@ func (s *sessionService) KnowledgeInterpret(ctx context.Context,
 		return nil, err
 	}
 
+	// Detect language from user query
+	detectedLang := detectLanguage(query)
+	logger.Infof(ctx, "Detected language: %s", detectedLang)
+	
 	// 使用配置的system prompt，并渲染{{contexts}}变量
 	systemPrompt := s.cfg.Conversation.Summary.Prompt
 	if systemPrompt == "" {
@@ -975,7 +963,7 @@ func (s *sessionService) KnowledgeInterpret(ctx context.Context,
 	// 渲染system prompt中的{{contexts}}变量
 	renderedSystemPrompt := types.RenderPromptPlaceholders(systemPrompt, types.PlaceholderValues{
 		"contexts": contextsStr,
-		"language": "zh-CN",
+		"language": detectedLang,
 	})
 	
 	messages := []chat.Message{
@@ -1116,6 +1104,10 @@ func (s *sessionService) KnowledgeInterpretStream(ctx context.Context,
 		return nil, "", err
 	}
 
+	// Detect language from user query
+	detectedLang := detectLanguage(query)
+	logger.Infof(ctx, "Detected language: %s", detectedLang)
+
 	// 使用配置的system prompt，并渲染{{contexts}}变量
 	systemPrompt := s.cfg.Conversation.Summary.Prompt
 	if systemPrompt == "" {
@@ -1125,7 +1117,7 @@ func (s *sessionService) KnowledgeInterpretStream(ctx context.Context,
 	// 渲染system prompt中的{{contexts}}变量
 	renderedSystemPrompt := types.RenderPromptPlaceholders(systemPrompt, types.PlaceholderValues{
 		"contexts": contextsStr,
-		"language": "zh-CN",
+		"language": detectedLang,
 	})
 	
 	messages := []chat.Message{
@@ -1245,4 +1237,48 @@ func (s *sessionService) KnowledgeInterpretStream(ctx context.Context,
 	}()
 
 	return sources, modelID, nil
+}
+
+// detectLanguage detects the language of the input text
+// Returns: "zh-CN" for Simplified Chinese, "zh-TW" for Traditional Chinese, "en" for English, "zh" for other Chinese
+func detectLanguage(text string) string {
+	// Check for Traditional Chinese characters
+	traditionalChars := []rune{'這', '個', '們', '來', '時', '後', '經', '長', '國', '會', '發', '說', '問', '學', '點', '對', '過', '還', '應', '當', '進', '現', '實', '開', '問', '請', '們', '從', '為', '過', '來', '個', '說', '經', '長', '國', '時', '後', '會', '發', '點', '對', '還', '應', '當', '進', '現', '實', '開', '問', '請', '從', '為'}
+	
+	// Check for English characters
+	hasEnglish := false
+	hasChinese := false
+	traditionalCount := 0
+	
+	for _, r := range text {
+		// Check if it's an English letter
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') {
+			hasEnglish = true
+		}
+		// Check if it's a Chinese character
+		if r >= 0x4e00 && r <= 0x9fff {
+			hasChinese = true
+			// Check if it's a Traditional Chinese character
+			for _, tc := range traditionalChars {
+				if r == tc {
+					traditionalCount++
+					break
+				}
+			}
+		}
+	}
+	
+	// Determine language
+	if hasChinese {
+		if traditionalCount >= 2 {
+			return "zh-TW" // Traditional Chinese
+		}
+		return "zh-CN" // Simplified Chinese
+	}
+	
+	if hasEnglish {
+		return "en" // English
+	}
+	
+	return "zh" // Default to Chinese
 }
