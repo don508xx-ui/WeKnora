@@ -884,13 +884,13 @@ func (s *sessionService) KnowledgeInterpret(ctx context.Context,
 	}
 
 	var contextsBuilder strings.Builder
-	
-	// 构建contexts内容
+
+	// 构建contexts内容，包含资料名称
 	for i, result := range searchResults {
 		if i > 0 {
 			contextsBuilder.WriteString("\n\n")
 		}
-		contextsBuilder.WriteString(fmt.Sprintf("[%d] %s", i+1, result.Content))
+		contextsBuilder.WriteString(fmt.Sprintf("[%d] 【%s】%s", i+1, result.KnowledgeTitle, result.Content))
 	}
 	
 	contextsStr := contextsBuilder.String()
