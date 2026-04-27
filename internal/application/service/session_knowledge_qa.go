@@ -961,7 +961,7 @@ func (s *sessionService) KnowledgeInterpret(ctx context.Context,
 	// 使用配置的system prompt，并渲染{{contexts}}变量
 	systemPrompt := s.cfg.Conversation.Summary.Prompt
 	if systemPrompt == "" {
-		systemPrompt = "You are WeKnora, a professional intelligent information retrieval assistant. The following is retrieved information that may or may not be relevant:\n{{contexts}}\n\nPlease answer the user's question based on the retrieved information. Please use the same language as the user's question for both your thinking process and final answer.\n\n### CRITICAL INSTRUCTION:\nYou MUST call the final_answer tool to submit your answer. DO NOT write your answer directly in the response.\n\n### Citation Rules (STRICT):\n- Factual claims must be cited using <kb doc=\"...\" /> format\n- The citation tag must be placed on the same line as the last sentence of the paragraph it supports\n- One citation per paragraph per source is enough\n- CORRECT: 金牛座是稳定踏实的星座。<kb doc=\"当代占星研究\" />\n- WRONG (line break before tag):\n  金牛座是稳定踏实的星座。\n  <kb doc=\"当代占星研究\" />"
+		systemPrompt = "You are WeKnora, a professional intelligent information retrieval assistant. The following is retrieved information that may or may not be relevant:\n{{contexts}}\n\nPlease answer the user's question based on the retrieved information. Please use the same language as the user's question for both your thinking process and final answer.\n\n### ABSOLUTE REQUIREMENT - CITATION MANDATORY:\nYou MUST cite the source for EVERY factual claim using the format: <kb doc=\"DOCUMENT_NAME\" />\n- Place the citation tag ON THE SAME LINE as the sentence it supports\n- Example: 太阳代表核心自我。<kb doc=\"当代占星研究\" />\n- NEVER omit citations\n- NEVER place citations on separate lines"
 	}
 
 	// 渲染system prompt中的{{contexts}}变量
@@ -1013,7 +1013,7 @@ WRONG: 火元素代表驱力和活力。
 		MaxCompletionTokens: s.cfg.Conversation.Summary.MaxCompletionTokens,
 		Thinking:            &thinking,
 		Tools:               []chat.Tool{finalAnswerTool},
-		ToolChoice:          "required",
+		ToolChoice:          "auto",
 	}
 
 	logger.Infof(ctx, "Calling LLM for interpretation with model: %s, thinking enabled", modelID)
