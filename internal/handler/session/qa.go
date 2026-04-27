@@ -822,20 +822,25 @@ func (h *Handler) knowledgeInterpretStream(c *gin.Context, ctx context.Context, 
 		sendEvent("sources", string(sourcesJson), false)
 	}
 
-	// Subscribe to events from EventBus
+	// Subscribe to thinking events from EventBus
+	eventBus.On(event.EventAgentThought, func(eventCtx context.Context, evt event.Event) error {
+		data, ok := evt.Data.(event.AgentThoughtData)
+		if !ok {
+			return nil
+		}
+
+		sendEvent("thinking", data.Content, data.Done)
+		return nil
+	})
+
+	// Subscribe to final answer events from EventBus
 	eventBus.On(event.EventAgentFinalAnswer, func(eventCtx context.Context, evt event.Event) error {
 		data, ok := evt.Data.(event.AgentFinalAnswerData)
 		if !ok {
 			return nil
 		}
 
-		responseType := "answer"
-		// Try to detect if this is thinking content
-		if strings.HasPrefix(data.Content, "<think>") || strings.Contains(data.Content, "Analyze the Request") || strings.Contains(data.Content, "Formulate the Response") {
-			responseType = "thinking"
-		}
-
-		sendEvent(responseType, data.Content, data.Done)
+		sendEvent("answer", data.Content, data.Done)
 		return nil
 	})
 

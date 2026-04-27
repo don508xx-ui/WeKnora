@@ -1134,7 +1134,6 @@ func (s *sessionService) KnowledgeInterpretStream(ctx context.Context,
 	// Process streaming responses
 	go func() {
 		var thinkingStarted bool
-		var thinkingContent strings.Builder
 		var answerStarted bool
 
 		for resp := range respChan {
@@ -1166,25 +1165,22 @@ func (s *sessionService) KnowledgeInterpretStream(ctx context.Context,
 
 			// If we've started thinking and now see content that looks like answer
 			if thinkingStarted && !answerStarted && !isThinking {
-				// First, send the accumulated thinking content
-				if thinkingContent.Len() > 0 {
-					eventBus.Emit(ctx, event.Event{
-						ID:        requestID,
-						Type:      event.EventAgentFinalAnswer,
-						SessionID: requestID,
-						Data: event.AgentFinalAnswerData{
-							Content: "<think>" + thinkingContent.String() + "</think>\n",
-							Done:    false,
-						},
-					})
-				}
 				answerStarted = true
 			}
 
 			if isThinking {
-				thinkingContent.WriteString(content)
+				// Send thinking content using EventAgentThought
+				eventBus.Emit(ctx, event.Event{
+					ID:        requestID,
+					Type:      event.EventAgentThought,
+					SessionID: requestID,
+					Data: event.AgentThoughtData{
+						Content: content,
+						Done:    false,
+					},
+				})
 			} else {
-				// Send answer content
+				// Send answer content using EventAgentFinalAnswer
 				eventBus.Emit(ctx, event.Event{
 					ID:        requestID,
 					Type:      event.EventAgentFinalAnswer,
@@ -1197,20 +1193,20 @@ func (s *sessionService) KnowledgeInterpretStream(ctx context.Context,
 			}
 		}
 
-		// If there's remaining thinking content and no answer started, send it
-		if thinkingContent.Len() > 0 && !answerStarted {
+		// Send done event for thinking
+		if thinkingStarted {
 			eventBus.Emit(ctx, event.Event{
 				ID:        requestID,
-				Type:      event.EventAgentFinalAnswer,
+				Type:      event.EventAgentThought,
 				SessionID: requestID,
-				Data: event.AgentFinalAnswerData{
-					Content: "<think>" + thinkingContent.String() + "</think>",
+				Data: event.AgentThoughtData{
+					Content: "",
 					Done:    true,
 				},
 			})
 		}
 
-		// Make sure we send done event if not already sent
+		// Make sure we send done event for answer if not already sent
 		eventBus.Emit(ctx, event.Event{
 			ID:        requestID,
 			Type:      event.EventAgentFinalAnswer,
