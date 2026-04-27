@@ -980,13 +980,25 @@ func (s *sessionService) KnowledgeInterpret(ctx context.Context,
 		Type: "function",
 		Function: chat.FunctionDef{
 			Name:        "final_answer",
-			Description: "Submit your final answer with inline citations. You MUST call this tool to provide your answer.",
+			Description: `Submit your final answer with inline citations. You MUST call this tool to provide your answer.
+
+## CRITICAL CITATION RULES:
+- EVERY factual claim MUST be followed by a citation in the format: <kb doc="DOCUMENT_NAME" />
+- The citation tag MUST be placed on the SAME LINE as the last sentence of the paragraph
+- Example: "金牛座是稳定踏实的星座。<kb doc="当代占星研究" />"
+- NEVER put the citation on a new line
+- NEVER omit citations for factual claims
+
+## Examples:
+CORRECT: 火元素代表驱力和活力。<kb doc="星座第一书" />
+WRONG: 火元素代表驱力和活力。
+<kb doc="星座第一书" />`,
 			Parameters: json.RawMessage(`{
 				"type": "object",
 				"properties": {
 					"answer": {
 						"type": "string",
-						"description": "Your complete final answer in Markdown format with inline citations using <kb doc=\"...\" /> format"
+						"description": "Your complete final answer in Markdown format. EVERY factual claim MUST include inline citations using <kb doc=\"DOCUMENT_NAME\" /> format placed on the same line."
 					}
 				},
 				"required": ["answer"]
