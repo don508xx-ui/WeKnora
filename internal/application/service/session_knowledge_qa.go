@@ -1,4 +1,4 @@
-﻿package service
+package service
 
 // Trigger deployment - v3
 
@@ -119,52 +119,64 @@ func (s *sessionService) KnowledgeQA(
 			WebSearchProviderID:     s.resolveWebSearchProviderID(ctx, req, retrievalTenantID),
 			WebFetchEnabled:         s.resolveWebFetchEnabled(req),
 			WebFetchTopN:            s.resolveWebFetchTopN(req),
-			WebSearchMaxResults:     s.resolveWebSearchMaxResults(ctx, req),
-			ChatModelSupportsVision: chatModelSupportsVision,
-			VLMModelID:              vlmModelID,
+			TenantID:                retrievalTenantID,
 			Images:                  req.ImageURLs,
-			ImageDescription:        req.ImageDescription,
-			QuotedContext:           req.QuotedContext,
+			VLMModelID:              vlmModelID,
+			ChatModelSupportsVision: chatModelSupportsVision,
 			Language:                types.LanguageNameFromContext(ctx),
 		},
-		EventBus: eventBus,
+		PipelineState: types.PipelineState{
+			RewriteQuery:     req.Query,
+			ImageDescription: req.ImageDescription,
+			QuotedContext:    req.QuotedContext,
+		},
+		PipelineContext: types.PipelineContext{
+			EventBus:      eventBus.AsEventBusInterface(),
+			MessageID:     req.AssistantMessageID,
+			UserMessageID: req.UserMessageID,
+		},
 	}
 
-	// Apply custom agent overrides (multi-turn, history turns, etc.)
+	// Apply custom agent overrides (system prompt, temperature, retrieval params,
+	// rewrite, fallback, FAQ strategy, history turns)
 	s.applyAgentOverridesToChatManage(ctx, req.CustomAgent, chatManage)
 
 	// Determine pipeline based on knowledge bases availability and web search setting
 	hasKB := len(knowledgeBaseIDs) > 0 || len(knowledgeIDs) > 0
+	needsRAG := hasKB || req.WebSearchEnabled
 	hasHistory := chatManage.MaxRounds > 0
 
 	var pipeline []types.EventType
-	if !hasKB && !req.WebSearchEnabled {
-		// Pure chat mode (no KB, no web search)
+	if !needsRAG {
+		// Pure chat — no retrieval needed.
 		userContent := req.Query
+		if req.ImageDescription != "" && !chatModelSupportsVision {
+			userContent += "\n\n[用户上传图片内容]\n" + req.ImageDescription
+		}
 		if req.QuotedContext != "" {
 			userContent += "\n\n" + req.QuotedContext
 		}
 		chatManage.UserContent = userContent
+
 		pipeline = types.NewPipelineBuilder().
+			AddIf(hasHistory, types.LOAD_HISTORY).
 			AddIf(chatManage.EnableMemory, types.MEMORY_RETRIEVAL).
+			Add(types.CHAT_COMPLETION_STREAM).
 			AddIf(chatManage.EnableMemory, types.MEMORY_STORAGE).
-			Add(types.CHAT_COMPLETION).
 			Build()
 	} else {
-		// KB and/or web search mode
+		// RAG — dynamically assemble based on feature flags.
 		pipeline = types.NewPipelineBuilder().
-			AddIf(chatManage.EnableMemory, types.MEMORY_RETRIEVAL).
-			AddIf(hasKB, types.KB_SEARCH).
-			AddIf(req.WebSearchEnabled, types.WEB_SEARCH).
-			AddIf(chatManage.EnableMemory, types.MEMORY_STORAGE).
-			AddIf(hasHistory, types.LOAD_HISTORY).
-			AddIf(chatManage.EnableRewrite, types.QUERY_REWRITE).
-			AddIf(chatManage.EnableQueryExpansion, types.QUERY_EXPANSION).
-			AddIf(hasKB, types.SEARCH_ENTITY).
-			AddIf(hasKB, types.RERANK).
-			AddIf(hasKB, types.MERGE).
+			Add(types.LOAD_HISTORY).
+			Add(types.QUERY_UNDERSTAND).
+			Add(types.CHUNK_SEARCH_PARALLEL).
+			Add(types.CHUNK_RERANK).
+			AddIf(req.WebSearchEnabled, types.WEB_FETCH).
+			Add(types.CHUNK_MERGE).
+			Add(types.FILTER_TOP_K).
+			Add(types.DATA_ANALYSIS).
 			Add(types.INTO_CHAT_MESSAGE).
-			Add(types.CHAT_COMPLETION).
+			Add(types.CHAT_COMPLETION_STREAM).
 			Build()
 	}
 
@@ -172,25 +184,37 @@ func (s *sessionService) KnowledgeQA(
 		len(pipeline), hasKB, req.WebSearchEnabled, hasHistory)
 
 	// Start knowledge QA event processing (set session tenant so pipeline session/message lookups use session owner)
+	ctx = context.WithValue(ctx, types.SessionTenantIDContextKey, req.Session.TenantID)
+	logger.Info(ctx, "Triggering question answering event")
 	err = s.KnowledgeQAByEvent(ctx, chatManage, pipeline)
 	if err != nil {
+		logger.ErrorWithFields(ctx, err, map[string]interface{}{
+			"session_id": req.Session.ID,
+		})
 		return err
 	}
 
-	// Emit references event if we have merge results (KB search results)
+	// Emit references event if we have search results
 	if len(chatManage.MergeResult) > 0 {
 		logger.Infof(ctx, "Emitting references event with %d results", len(chatManage.MergeResult))
-		if err := eventBus.Emit(ctx, types.Event{
-			Type:      types.EventReference,
+		if err := eventBus.Emit(ctx, event.Event{
+			ID:        generateEventID("references"),
+			Type:      event.EventAgentReferences,
 			SessionID: req.Session.ID,
-			Data: types.ReferenceEventData{
+			Data: event.AgentReferencesData{
 				References: chatManage.MergeResult,
 			},
 		}); err != nil {
-			logger.Warnf(ctx, "Failed to emit references event: %v", err)
+			logger.Errorf(ctx, "Failed to emit references event: %v", err)
 		}
 	}
 
+	// Note: Answer events are now emitted directly by chat_completion_stream plugin
+	// Completion event will be emitted when the last answer event has Done=true
+	// We can optionally add a completion watcher here if needed, but for now
+	// the frontend can detect completion from the Done flag
+
+	logger.Info(ctx, "Knowledge base question answering initiated")
 	return nil
 }
 
@@ -214,69 +238,81 @@ func (s *sessionService) selectChatModelID(
 			logger.Warnf(ctx, "Failed to get knowledge batch for model selection: %v", err)
 		} else {
 			// Collect unique KB IDs from knowledge items
-			kbIDSet := make(map[string]struct{})
+			kbIDSet := make(map[string]bool)
 			for _, k := range knowledgeList {
 				if k != nil && k.KnowledgeBaseID != "" {
-					kbIDSet[k.KnowledgeBaseID] = struct{}{}
+					kbIDSet[k.KnowledgeBaseID] = true
 				}
 			}
-			// Convert set to slice
 			for kbID := range kbIDSet {
 				knowledgeBaseIDs = append(knowledgeBaseIDs, kbID)
 			}
-			logger.Infof(ctx, "Derived %d knowledge base IDs from %d knowledge IDs", len(knowledgeBaseIDs), len(knowledgeIDs))
+			logger.Infof(ctx, "Derived %d knowledge base IDs from %d knowledge IDs for model selection",
+				len(knowledgeBaseIDs), len(knowledgeIDs))
 		}
 	}
-
-	// Priority 1: Session's SummaryModelID if it's a Remote model
-	if session.SummaryModelID != "" {
-		if model, err := s.modelService.GetModelByID(ctx, session.SummaryModelID); err == nil && model != nil {
-			if model.Type == "Remote" {
-				logger.Infof(ctx, "Using session's remote summary model: %s", session.SummaryModelID)
-				return session.SummaryModelID, nil
+	// Check knowledge bases for models
+	if len(knowledgeBaseIDs) > 0 {
+		// Try to find a knowledge base with Remote model
+		for _, kbID := range knowledgeBaseIDs {
+			kb, err := s.knowledgeBaseService.GetKnowledgeBaseByID(ctx, kbID)
+			if err != nil {
+				logger.Warnf(ctx, "Failed to get knowledge base: %v", err)
+				continue
 			}
-		}
-	}
-
-	// Priority 2: First knowledge base with a Remote model
-	for _, kbID := range knowledgeBaseIDs {
-		kb, err := s.knowledgeBaseService.GetKnowledgeBaseByID(ctx, kbID)
-		if err != nil || kb == nil {
-			continue
-		}
-		if kb.SummaryModelID != "" {
-			if model, err := s.modelService.GetModelByID(ctx, kb.SummaryModelID); err == nil && model != nil {
-				if model.Type == "Remote" {
-					logger.Infof(ctx, "Using knowledge base's remote summary model: %s (kb=%s)", kb.SummaryModelID, kbID)
+			if kb != nil && kb.SummaryModelID != "" {
+				model, err := s.modelService.GetModelByID(ctx, kb.SummaryModelID)
+				if err == nil && model != nil && model.Source == types.ModelSourceRemote {
+					logger.Info(ctx, "Using Remote summary model from knowledge base")
 					return kb.SummaryModelID, nil
 				}
 			}
 		}
-	}
 
-	// Priority 3: Session's SummaryModelID (even if not Remote)
-	if session.SummaryModelID != "" {
-		logger.Infof(ctx, "Using session's summary model: %s", session.SummaryModelID)
-		return session.SummaryModelID, nil
-	}
-
-	// Priority 4: First knowledge base's SummaryModelID (any type)
-	for _, kbID := range knowledgeBaseIDs {
-		kb, err := s.knowledgeBaseService.GetKnowledgeBaseByID(ctx, kbID)
-		if err != nil || kb == nil {
-			continue
+		// If no Remote model found, use first knowledge base's model
+		kb, err := s.knowledgeBaseService.GetKnowledgeBaseByID(ctx, knowledgeBaseIDs[0])
+		if err != nil {
+			logger.Errorf(ctx, "Failed to get knowledge base for model ID: %v", err)
+			return "", fmt.Errorf("failed to get knowledge base %s: %w", knowledgeBaseIDs[0], err)
 		}
-		if kb.SummaryModelID != "" {
-			logger.Infof(ctx, "Using knowledge base's summary model: %s (kb=%s)", kb.SummaryModelID, kbID)
+		if kb != nil && kb.SummaryModelID != "" {
+			logger.Infof(
+				ctx,
+				"Using summary model from first knowledge base %s: %s",
+				knowledgeBaseIDs[0],
+				kb.SummaryModelID,
+			)
 			return kb.SummaryModelID, nil
 		}
 	}
 
-	return "", fmt.Errorf("no chat model available")
+	// No knowledge bases - try to find any available chat model
+	models, err := s.modelService.ListModels(ctx)
+	if err != nil {
+		logger.Errorf(ctx, "Failed to list models: %v", err)
+		return "", fmt.Errorf("failed to list models: %w", err)
+	}
+	for _, model := range models {
+		if model != nil && model.Type == types.ModelTypeKnowledgeQA {
+			logger.Infof(ctx, "Using first available KnowledgeQA model: %s", model.ID)
+			return model.ID, nil
+		}
+	}
+
+	logger.Error(ctx, "No chat model ID available")
+	return "", fmt.Errorf("no chat model ID available: no knowledge bases configured and no available models")
 }
 
-// resolveKnowledgeBasesFromAgent resolves knowledge base IDs from agent configuration
-// based on KBSelectionMode: "all", "selected", or "none"
+// resolveKnowledgeBasesFromAgent resolves knowledge base IDs based on agent's KBSelectionMode.
+// sessionTenantID is the tenant of the current session (caller); it is compared with
+// customAgent.TenantID to detect the shared-agent scenario and avoid leaking the
+// current user's personal shared KBs into the agent's retrieval scope.
+//
+// Returns the resolved knowledge base IDs based on the selection mode:
+//   - "all": fetches all knowledge bases for the tenant
+//   - "selected": uses the explicitly configured knowledge bases
+//   - "none": returns empty slice
+//   - default: falls back to configured knowledge bases for backward compatibility
 func (s *sessionService) resolveKnowledgeBasesFromAgent(
 	ctx context.Context,
 	customAgent *types.CustomAgent,
@@ -286,47 +322,61 @@ func (s *sessionService) resolveKnowledgeBasesFromAgent(
 		return nil
 	}
 
-	mode := customAgent.Config.KBSelectionMode
-	if mode == "" {
-		mode = "selected" // default mode
-	}
-
-	switch mode {
+	switch customAgent.Config.KBSelectionMode {
 	case "all":
-		// Get all knowledge bases accessible to the user
-		// Use session tenant for listing (shared agent uses handler's retrievalTenantID for scope)
-		kbs, err := s.knowledgeBaseService.GetKnowledgeBasesByTenantID(ctx, sessionTenantID)
+		// Get own knowledge bases (uses ctx TenantID = agent's tenant)
+		allKBs, err := s.knowledgeBaseService.ListKnowledgeBases(ctx)
 		if err != nil {
-			logger.Warnf(ctx, "Failed to get all knowledge bases for agent: %v", err)
-			return nil
+			logger.Warnf(ctx, "Failed to list all knowledge bases: %v", err)
 		}
-		var kbIDs []string
-		for _, kb := range kbs {
+		kbIDSet := make(map[string]bool)
+		kbIDs := make([]string, 0, len(allKBs))
+		for _, kb := range allKBs {
 			kbIDs = append(kbIDs, kb.ID)
+			kbIDSet[kb.ID] = true
 		}
-		logger.Infof(ctx, "Agent KB selection mode 'all': resolved %d knowledge bases", len(kbIDs))
-		return kbIDs
 
+		// For shared agents (session tenant != agent tenant), only use the agent
+		// tenant's own KBs. Including the current user's shared KBs would leak
+		// unrelated KBs from other organisations into the agent's retrieval scope.
+		isSharedAgent := sessionTenantID != 0 && sessionTenantID != customAgent.TenantID
+		if !isSharedAgent {
+			tenantID := types.MustTenantIDFromContext(ctx)
+			userIDVal := ctx.Value(types.UserIDContextKey)
+			if userIDVal != nil {
+				if userID, ok := userIDVal.(string); ok && userID != "" && s.kbShareService != nil {
+					sharedList, err := s.kbShareService.ListSharedKnowledgeBases(ctx, userID, tenantID)
+					if err != nil {
+						logger.Warnf(ctx, "Failed to list shared knowledge bases: %v", err)
+					} else {
+						for _, info := range sharedList {
+							if info != nil && info.KnowledgeBase != nil && !kbIDSet[info.KnowledgeBase.ID] {
+								kbIDs = append(kbIDs, info.KnowledgeBase.ID)
+								kbIDSet[info.KnowledgeBase.ID] = true
+							}
+						}
+					}
+				}
+			}
+		} else {
+			logger.Infof(ctx, "Shared agent detected (session tenant %d != agent tenant %d): skipping user's shared KBs",
+				sessionTenantID, customAgent.TenantID)
+		}
+
+		logger.Infof(ctx, "KBSelectionMode=all: loaded %d knowledge bases (own + shared)", len(kbIDs))
+		return kbIDs
 	case "selected":
-		// Use agent's configured knowledge bases
-		var kbIDs []string
-		for _, kb := range customAgent.Config.KnowledgeBases {
-			kbIDs = append(kbIDs, kb.ID)
-		}
-		logger.Infof(ctx, "Agent KB selection mode 'selected': resolved %d knowledge bases", len(kbIDs))
-		return kbIDs
-
+		logger.Infof(ctx, "KBSelectionMode=selected: using %d configured knowledge bases", len(customAgent.Config.KnowledgeBases))
+		return customAgent.Config.KnowledgeBases
 	case "none":
-		logger.Infof(ctx, "Agent KB selection mode 'none': no knowledge bases")
+		logger.Infof(ctx, "KBSelectionMode=none: no knowledge bases configured")
 		return nil
-
 	default:
-		logger.Warnf(ctx, "Unknown KB selection mode '%s', using 'selected'", mode)
-		var kbIDs []string
-		for _, kb := range customAgent.Config.KnowledgeBases {
-			kbIDs = append(kbIDs, kb.ID)
+		// Default to "selected" behavior for backward compatibility
+		if len(customAgent.Config.KnowledgeBases) > 0 {
+			logger.Infof(ctx, "KBSelectionMode not set: using %d configured knowledge bases", len(customAgent.Config.KnowledgeBases))
 		}
-		return kbIDs
+		return customAgent.Config.KnowledgeBases
 	}
 }
 
@@ -426,97 +476,10 @@ func (s *sessionService) buildSearchTargets(
 		}
 	}
 
+	logger.Infof(ctx, "Built %d search targets: %d full KB, %d partial KB, kbTenantMap=%v",
+		len(targets), len(knowledgeBaseIDs), len(targets)-len(knowledgeBaseIDs), kbTenantMap)
+
 	return targets, nil
-}
-
-// applyAgentOverridesToChatManage applies custom agent configuration overrides to ChatManage
-func (s *sessionService) applyAgentOverridesToChatManage(
-	ctx context.Context,
-	customAgent *types.CustomAgent,
-	chatManage *types.ChatManage,
-) {
-	if customAgent == nil {
-		return
-	}
-
-	// Override multi-turn settings
-	if customAgent.Config.MultiTurnEnabled {
-		chatManage.EnableMemory = true
-		if customAgent.Config.HistoryTurns > 0 {
-			chatManage.MaxRounds = customAgent.Config.HistoryTurns
-		}
-		logger.Infof(ctx, "Agent override: EnableMemory=true, MaxRounds=%d", chatManage.MaxRounds)
-	}
-
-	// Override temperature if specified
-	if customAgent.Config.Temperature > 0 {
-		chatManage.SummaryConfig.Temperature = customAgent.Config.Temperature
-		logger.Infof(ctx, "Agent override: Temperature=%.2f", customAgent.Config.Temperature)
-	}
-
-	// Override max completion tokens if specified
-	if customAgent.Config.MaxCompletionTokens > 0 {
-		chatManage.SummaryConfig.MaxCompletionTokens = customAgent.Config.MaxCompletionTokens
-		logger.Infof(ctx, "Agent override: MaxCompletionTokens=%d", customAgent.Config.MaxCompletionTokens)
-	}
-
-	// Override thinking mode if specified
-	if customAgent.Config.Thinking.Enabled {
-		chatManage.SummaryConfig.Thinking = customAgent.Config.Thinking
-		logger.Infof(ctx, "Agent override: Thinking enabled")
-	}
-}
-
-// restrictMentionsToAgentScope restricts @mentioned KBs/knowledge to the agent's allowed scope.
-// Used when a user @mentions KBs while using a shared agent - prevents accessing KBs outside agent config.
-func (s *sessionService) restrictMentionsToAgentScope(
-	ctx context.Context,
-	customAgent *types.CustomAgent,
-	sessionTenantID uint64,
-	mentionedKBIDs []string,
-	mentionedKnowledgeIDs []string,
-) (filteredKBIDs []string, filteredKnowledgeIDs []string) {
-	if customAgent == nil {
-		return mentionedKBIDs, mentionedKnowledgeIDs
-	}
-
-	// Build set of allowed KB IDs from agent config
-	allowedKBSet := make(map[string]struct{})
-	for _, kb := range customAgent.Config.KnowledgeBases {
-		allowedKBSet[kb.ID] = struct{}{}
-	}
-
-	// Filter mentioned KB IDs
-	for _, kbID := range mentionedKBIDs {
-		if _, allowed := allowedKBSet[kbID]; allowed {
-			filteredKBIDs = append(filteredKBIDs, kbID)
-		} else {
-			logger.Warnf(ctx, "Filtering out @mentioned KB %s - not in agent's allowed scope", kbID)
-		}
-	}
-
-	// Filter mentioned knowledge IDs by checking their KB
-	if len(mentionedKnowledgeIDs) > 0 {
-		knowledgeList, err := s.knowledgeService.GetKnowledgeBatchWithSharedAccess(ctx, sessionTenantID, mentionedKnowledgeIDs)
-		if err != nil {
-			logger.Warnf(ctx, "Failed to get knowledge batch for scope restriction: %v", err)
-			// Don't filter if we can't verify
-			filteredKnowledgeIDs = mentionedKnowledgeIDs
-		} else {
-			for _, k := range knowledgeList {
-				if k == nil {
-					continue
-				}
-				if _, allowed := allowedKBSet[k.KnowledgeBaseID]; allowed {
-					filteredKnowledgeIDs = append(filteredKnowledgeIDs, k.ID)
-				} else {
-					logger.Warnf(ctx, "Filtering out @mentioned knowledge %s (KB %s) - not in agent's allowed scope", k.ID, k.KnowledgeBaseID)
-				}
-			}
-		}
-	}
-
-	return filteredKBIDs, filteredKnowledgeIDs
 }
 
 // KnowledgeQAByEvent processes knowledge QA through a series of events in the pipeline
@@ -571,69 +534,122 @@ func (s *sessionService) KnowledgeQAByEvent(ctx context.Context,
 		"total_stages":      len(eventList),
 		"total_duration_ms": time.Since(pipelineStart).Milliseconds(),
 	})
-
-	logger.Info(ctx, "Knowledge base question answering completed")
 	return nil
 }
 
-// KnowledgeInterpret performs knowledge interpretation with LLM
-// Returns search results, model ID used, and any error
-func (s *sessionService) KnowledgeInterpret(
-	ctx context.Context,
-	sessionID string,
-	query string,
-	knowledgeBaseIDs []string,
-	knowledgeIDs []string,
-	modelID string,
-	webSearchEnabled bool,
-	imageURLs []string,
-	imageDescription string,
-) ([]*types.KnowledgeInterpretSource, string, error) {
-	// Use default chat model if not specified
-	if modelID == "" {
-		if len(knowledgeBaseIDs) > 0 {
-			kb, err := s.knowledgeBaseService.GetKnowledgeBaseByID(ctx, knowledgeBaseIDs[0])
-			if err == nil && kb != nil && kb.SummaryModelID != "" {
-				modelID = kb.SummaryModelID
+// SearchKnowledge performs knowledge base search without LLM summarization
+// knowledgeBaseIDs: list of knowledge base IDs to search (supports multi-KB)
+// knowledgeIDs: list of specific knowledge (file) IDs to search
+func (s *sessionService) SearchKnowledge(ctx context.Context,
+	knowledgeBaseIDs []string, knowledgeIDs []string, query string,
+) ([]*types.SearchResult, error) {
+	logger.Info(ctx, "Start knowledge base search without LLM summary")
+	logger.Infof(ctx, "Knowledge base search parameters, knowledge base IDs: %v, knowledge IDs: %v, query: %s",
+		knowledgeBaseIDs, knowledgeIDs, query)
+
+	// Get tenant ID from context
+	tenantID, ok := types.TenantIDFromContext(ctx)
+	if !ok {
+		logger.Error(ctx, "Failed to get tenant ID from context")
+		return nil, fmt.Errorf("tenant ID not found in context")
+	}
+
+	// Build unified search targets (computed once, used throughout pipeline)
+	searchTargets, err := s.buildSearchTargets(ctx, tenantID, knowledgeBaseIDs, knowledgeIDs)
+	if err != nil {
+		logger.Warnf(ctx, "Failed to build search targets: %v", err)
+	}
+
+	if len(searchTargets) == 0 {
+		logger.Warn(ctx, "No search targets available, returning empty results")
+		return []*types.SearchResult{}, nil
+	}
+
+	// Create default retrieval parameters — prefer tenant RetrievalConfig, fallback to built-in defaults
+	userID, _ := types.UserIDFromContext(ctx)
+
+	// Load tenant-level retrieval config (nil is safe — GetEffective* methods handle nil receiver)
+	var rc *types.RetrievalConfig
+	if tenant, err2 := s.tenantService.GetTenantByID(ctx, tenantID); err2 == nil {
+		rc = tenant.RetrievalConfig
+	}
+
+	chatManage := &types.ChatManage{
+		PipelineRequest: types.PipelineRequest{
+			Query:            query,
+			UserID:           userID,
+			KnowledgeBaseIDs: knowledgeBaseIDs,
+			KnowledgeIDs:     knowledgeIDs,
+			SearchTargets:    searchTargets,
+			MaxRounds:        s.cfg.Conversation.MaxRounds,
+			EmbeddingTopK:    rc.GetEffectiveEmbeddingTopK(),
+			VectorThreshold:  rc.GetEffectiveVectorThreshold(),
+			KeywordThreshold: rc.GetEffectiveKeywordThreshold(),
+			RerankTopK:       50, // Increase to get more results from different documents
+			RerankThreshold:  rc.GetEffectiveRerankThreshold(),
+		},
+		PipelineState: types.PipelineState{
+			RewriteQuery: query,
+		},
+	}
+
+	// Get default models
+	models, err := s.modelService.ListModels(ctx)
+	if err != nil {
+		logger.Errorf(ctx, "Failed to get models: %v", err)
+		return nil, err
+	}
+
+	// Use rerank model from RetrievalConfig if set, otherwise auto-select the first available
+	if rc != nil && rc.RerankModelID != "" {
+		chatManage.RerankModelID = rc.RerankModelID
+	} else {
+		for _, model := range models {
+			if model == nil {
+				continue
+			}
+			if model.Type == types.ModelTypeRerank {
+				chatManage.RerankModelID = model.ID
+				break
 			}
 		}
-		if modelID == "" {
-			modelID = s.cfg.Conversation.SummaryModelID
+	}
+
+	// Use specific event list, only including retrieval-related events, not LLM summarization
+	searchEvents := []types.EventType{
+		types.CHUNK_SEARCH, // Vector search
+		types.CHUNK_RERANK, // Rerank search results
+		types.CHUNK_MERGE,  // Merge search results
+		types.FILTER_TOP_K, // Filter top K results
+	}
+
+	logger.Infof(ctx, "Trigger search event list: %v", searchEvents)
+
+	for _, event := range searchEvents {
+		logger.Infof(ctx, "Starting to trigger search event: %v", event)
+		err := s.eventManager.Trigger(ctx, event, chatManage)
+
+		if err == chatpipeline.ErrSearchNothing {
+			logger.Warnf(ctx, "Event %v triggered, search result is empty", event)
+			return []*types.SearchResult{}, nil
 		}
-	}
 
-	// Get rerank model configuration
-	var rerankModelID string
-	if len(knowledgeBaseIDs) > 0 {
-		kb, err := s.knowledgeBaseService.GetKnowledgeBaseByID(ctx, knowledgeBaseIDs[0])
-		if err == nil && kb != nil {
-			rerankModelID = kb.RerankModelID
+		if err != nil {
+			logger.Errorf(ctx, "Event triggering failed, event: %v, error type: %s, description: %s, error: %v",
+				event, err.ErrorType, err.Description, err.Err)
+			return nil, err.Err
 		}
-	}
-	if rerankModelID == "" {
-		rerankModelID = s.cfg.Conversation.RerankModelID
+		logger.Infof(ctx, "Event %v triggered successfully", event)
 	}
 
-	// Perform search
-	searchResults, err := s.searchKnowledgeBases(ctx, query, knowledgeBaseIDs, knowledgeIDs, modelID, rerankModelID)
-	if err != nil {
-		return nil, "", err
-	}
+	logger.Infof(ctx, "Knowledge base search completed, found %d results", len(chatManage.MergeResult))
 
-	// Build sources list
-	var sources []types.KnowledgeInterpretSource
-	for _, result := range searchResults {
-		sources = append(sources, types.KnowledgeInterpretSource{
-			Title:       result.KnowledgeTitle,
-			KnowledgeID: result.KnowledgeID,
-			ChunkIndex:  result.ChunkIndex,
-		})
-	}
-
-	return sources, modelID, nil
+	// Return all search results without deduplication to preserve complete context
+	// WeKnora original logic: keep all chunks for comprehensive AI analysis
+	return chatManage.MergeResult, nil
 }
 
-// handleFallbackResponse handles the fallback response when search returns nothing
+// handleFallbackResponse handles fallback response based on strategy
 func (s *sessionService) handleFallbackResponse(ctx context.Context, chatManage *types.ChatManage) {
 	if chatManage.FallbackStrategy == types.FallbackStrategyModel {
 		s.handleModelFallback(ctx, chatManage)
@@ -642,73 +658,81 @@ func (s *sessionService) handleFallbackResponse(ctx context.Context, chatManage 
 	}
 }
 
-// handleFixedFallback handles the fixed fallback response
+// handleFixedFallback handles fixed fallback response
 func (s *sessionService) handleFixedFallback(ctx context.Context, chatManage *types.ChatManage) {
 	fallbackContent := chatManage.FallbackResponse
 	chatManage.ChatResponse = &types.ChatResponse{Content: fallbackContent}
 	s.emitFallbackAnswer(ctx, chatManage, fallbackContent)
 }
 
-// handleModelFallback handles the model fallback response
+// handleModelFallback handles model-based fallback response using streaming
 func (s *sessionService) handleModelFallback(ctx context.Context, chatManage *types.ChatManage) {
+	// Check if FallbackPrompt is available
 	if chatManage.FallbackPrompt == "" {
-		logger.Warnf(ctx, "Fallback prompt is empty, using fixed fallback")
+		logger.Warnf(ctx, "Fallback strategy is 'model' but FallbackPrompt is empty, falling back to fixed response")
 		s.handleFixedFallback(ctx, chatManage)
 		return
 	}
 
+	// Render template with Query variable
 	promptContent, err := s.renderFallbackPrompt(ctx, chatManage)
 	if err != nil {
-		logger.Errorf(ctx, "Failed to render fallback prompt: %v", err)
+		logger.Errorf(ctx, "Failed to render fallback prompt: %v, falling back to fixed response", err)
 		s.handleFixedFallback(ctx, chatManage)
 		return
 	}
 
+	// Check if EventBus is available for streaming
 	if chatManage.EventBus == nil {
-		logger.Errorf(ctx, "EventBus is nil, cannot emit fallback answer")
+		logger.Warnf(ctx, "EventBus not available for streaming fallback, falling back to fixed response")
 		s.handleFixedFallback(ctx, chatManage)
 		return
 	}
 
+	// Get chat model
 	chatModel, err := s.modelService.GetChatModel(ctx, chatManage.ChatModelID)
 	if err != nil {
-		logger.Errorf(ctx, "Failed to get chat model for fallback: %v", err)
+		logger.Errorf(ctx, "Failed to get chat model for fallback: %v, falling back to fixed response", err)
 		s.handleFixedFallback(ctx, chatManage)
 		return
 	}
 
-	options := &chat.ChatOptions{
+	// Prepare chat options
+	thinking := false
+	opt := &chat.ChatOptions{
 		Temperature:         chatManage.SummaryConfig.Temperature,
 		MaxCompletionTokens: chatManage.SummaryConfig.MaxCompletionTokens,
+		Thinking:            &thinking,
 	}
 
+	// Start streaming response
 	userMsg := chat.Message{Role: "user", Content: promptContent}
 	if chatManage.ChatModelSupportsVision && len(chatManage.Images) > 0 {
 		userMsg.Images = chatManage.Images
 	}
-
-	messages := []chat.Message{
-		{Role: "system", Content: "You are a helpful assistant."},
-		userMsg,
-	}
-
-	responseChan, err := chatModel.ChatStream(ctx, messages, options)
+	responseChan, err := chatModel.ChatStream(ctx, []chat.Message{userMsg}, opt)
 	if err != nil {
-		logger.Errorf(ctx, "Failed to start chat stream for fallback: %v", err)
+		logger.Errorf(ctx, "Failed to start streaming fallback response: %v, falling back to fixed response", err)
 		s.handleFixedFallback(ctx, chatManage)
 		return
 	}
 
+	if responseChan == nil {
+		logger.Errorf(ctx, "Chat stream returned nil channel, falling back to fixed response")
+		s.handleFixedFallback(ctx, chatManage)
+		return
+	}
+
+	// Start goroutine to consume stream and emit events
 	go s.consumeFallbackStream(ctx, chatManage, responseChan)
 }
 
-// renderFallbackPrompt renders the fallback prompt with placeholders
+// renderFallbackPrompt renders the fallback prompt template with query and image context.
 func (s *sessionService) renderFallbackPrompt(ctx context.Context, chatManage *types.ChatManage) (string, error) {
 	query := chatManage.Query
 	if rq := strings.TrimSpace(chatManage.RewriteQuery); rq != "" {
 		query = rq
 	}
-
 	result := types.RenderPromptPlaceholders(chatManage.FallbackPrompt, types.PlaceholderValues{
 		"query":    query,
 		"language": chatManage.Language,
@@ -717,130 +741,550 @@ func (s *sessionService) renderFallbackPrompt(ctx context.Context, chatManage *t
 	if chatManage.ImageDescription != "" && !chatManage.ChatModelSupportsVision {
 		result += "\n\n[用户上传图片内容]\n" + chatManage.ImageDescription
 	}
-
 	if chatManage.QuotedContext != "" {
 		result += "\n\n" + chatManage.QuotedContext
 	}
-
 	return result, nil
 }
 
-// consumeFallbackStream consumes the fallback stream and emits events
+// consumeFallbackStream consumes the streaming response and emits events
 func (s *sessionService) consumeFallbackStream(
 	ctx context.Context,
 	chatManage *types.ChatManage,
-	responseChan <-chan chat.ChatResponse,
+	responseChan <-chan types.StreamResponse,
 ) {
+	fallbackID := generateEventID("fallback")
 	eventBus := chatManage.EventBus
-	var finalContent strings.Builder
+	var finalContent string
+	streamCompleted := false
 
 	for response := range responseChan {
-		if response.Error != nil {
-			logger.Errorf(ctx, "Fallback stream error: %v", response.Error)
-			s.emitFallbackAnswer(ctx, chatManage, chatManage.FallbackResponse)
-			return
-		}
-
-		if response.Content != "" {
-			finalContent.WriteString(response.Content)
+		// Emit event for each answer chunk
+		if response.ResponseType == types.ResponseTypeAnswer {
+			finalContent += response.Content
 			if err := eventBus.Emit(ctx, types.Event{
-				Type:      types.EventChatCompletion,
+				ID:        fallbackID,
+				Type:      types.EventType(event.EventAgentFinalAnswer),
 				SessionID: chatManage.SessionID,
-				Data: types.ChatCompletionEventData{
-					Content: response.Content,
-					Done:    false,
+				Data: event.AgentFinalAnswerData{
+					Content:    response.Content,
+					Done:       response.Done,
+					IsFallback: true,
 				},
 			}); err != nil {
-				logger.Errorf(ctx, "Failed to emit fallback chunk: %v", err)
+				logger.Errorf(ctx, "Failed to emit fallback answer chunk event: %v", err)
+			}
+
+			// Update ChatResponse with final content when done
+			if response.Done {
+				chatManage.ChatResponse = &types.ChatResponse{Content: finalContent}
+				streamCompleted = true
+				logger.Infof(ctx, "Fallback streaming response completed")
+				break
 			}
 		}
 	}
 
-	// Emit final event
-	if err := eventBus.Emit(ctx, types.Event{
-		Type:      types.EventChatCompletion,
-		SessionID: chatManage.SessionID,
-		Data: types.ChatCompletionEventData{
-			Content: "",
-			Done:    true,
-		},
-	}); err != nil {
-		logger.Errorf(ctx, "Failed to emit fallback completion: %v", err)
+	// If channel closed without Done=true, emit final event with fixed response
+	if !streamCompleted {
+		logger.Warnf(ctx, "Fallback stream closed without completion, emitting final event with fixed response")
+		s.emitFallbackAnswer(ctx, chatManage, chatManage.FallbackResponse)
 	}
-
-	chatManage.ChatResponse = &types.ChatResponse{Content: finalContent.String()}
 }
 
-// emitFallbackAnswer emits the fallback answer event
+// emitFallbackAnswer emits fallback answer event
 func (s *sessionService) emitFallbackAnswer(ctx context.Context, chatManage *types.ChatManage, content string) {
 	if chatManage.EventBus == nil {
-		logger.Errorf(ctx, "EventBus is nil, cannot emit fallback answer")
 		return
 	}
 
+	fallbackID := generateEventID("fallback")
 	if err := chatManage.EventBus.Emit(ctx, types.Event{
-		Type:      types.EventChatCompletion,
+		ID:        fallbackID,
+		Type:      types.EventType(event.EventAgentFinalAnswer),
 		SessionID: chatManage.SessionID,
-		Data: types.ChatCompletionEventData{
-			Content: content,
-			Done:    true,
+		Data: event.AgentFinalAnswerData{
+			Content:    content,
+			Done:       true,
+			IsFallback: true,
 		},
 	}); err != nil {
-		logger.Errorf(ctx, "Failed to emit fallback answer: %v", err)
+		logger.Errorf(ctx, "Failed to emit fallback answer event: %v", err)
+	} else {
+		logger.Infof(ctx, "Fallback answer event emitted successfully")
 	}
 }
 
 // resolveWebSearchProviderID returns the web search provider ID to use for a pipeline request.
-// Priority: agent config > tenant default
-func (s *sessionService) resolveWebSearchProviderID(ctx context.Context, req *types.QARequest, retrievalTenantID uint64) string {
-	// Use agent's web search provider if configured
+// Priority: agent config > tenant default (is_default=true)
+func (s *sessionService) resolveWebSearchProviderID(ctx context.Context, req *types.QARequest, tenantID uint64) string {
+	// 1. Agent-level override
 	if req.CustomAgent != nil && req.CustomAgent.Config.WebSearchProviderID != "" {
 		return req.CustomAgent.Config.WebSearchProviderID
 	}
+	// 2. Tenant default
+	if s.webSearchProviderRepo != nil {
+		if defaultProvider, err := s.webSearchProviderRepo.GetDefault(ctx, tenantID); err == nil && defaultProvider != nil {
+			return defaultProvider.ID
+		}
+	}
+	return ""
+}
 
-	// Fall back to tenant's default provider
-	if retrievalTenantID != 0 {
-		if tenant, err := s.tenantService.GetTenantByID(ctx, retrievalTenantID); err == nil && tenant != nil {
-			if tenant.WebSearchConfig != nil && tenant.WebSearchConfig.ProviderID != "" {
-				return tenant.WebSearchConfig.ProviderID
+// resolveWebFetchEnabled returns whether auto web fetch is enabled for this request.
+func (s *sessionService) resolveWebFetchEnabled(req *types.QARequest) bool {
+	if req.CustomAgent != nil {
+		return req.CustomAgent.Config.WebFetchEnabled
+	}
+	return false
+}
+
+// resolveWebFetchTopN returns how many pages to fetch after rerank.
+func (s *sessionService) resolveWebFetchTopN(req *types.QARequest) int {
+	if req.CustomAgent != nil && req.CustomAgent.Config.WebFetchTopN > 0 {
+		return req.CustomAgent.Config.WebFetchTopN
+	}
+	return 3
+}
+
+// KnowledgeInterpret performs knowledge-based interpretation with LLM, returning a non-streaming formatted answer
+func (s *sessionService) KnowledgeInterpret(ctx context.Context,
+	knowledgeBaseIDs []string, knowledgeIDs []string, query string, modelID string,
+) (*types.KnowledgeInterpretResponse, error) {
+	logger.Info(ctx, "Start knowledge interpretation with LLM")
+	logger.Infof(ctx, "Knowledge interpret parameters, knowledge base IDs: %v, knowledge IDs: %v, query: %s, modelID: %s",
+		knowledgeBaseIDs, knowledgeIDs, query, modelID)
+
+	searchResults, err := s.SearchKnowledge(ctx, knowledgeBaseIDs, knowledgeIDs, query)
+	if err != nil {
+		logger.Errorf(ctx, "Failed to search knowledge: %v", err)
+		return nil, err
+	}
+
+	if len(searchResults) == 0 {
+		logger.Warn(ctx, "No search results found for interpretation")
+		return &types.KnowledgeInterpretResponse{
+			Answer:  "未找到相关知识，无法提供解读。",
+			Sources: []types.KnowledgeInterpretSource{},
+			Model:   modelID,
+			Success: true,
+		}, nil
+	}
+
+	// Build sources list, deduplicate by KnowledgeID for clean display
+	sources := make([]types.KnowledgeInterpretSource, 0)
+	seenKnowledgeIDs := make(map[string]bool)
+	for _, result := range searchResults {
+		if !seenKnowledgeIDs[result.KnowledgeID] {
+			seenKnowledgeIDs[result.KnowledgeID] = true
+			sources = append(sources, types.KnowledgeInterpretSource{
+				Title:       result.KnowledgeTitle,
+				KnowledgeID: result.KnowledgeID,
+				ChunkIndex:  result.ChunkIndex,
+			})
+		}
+	}
+
+	var contextsBuilder strings.Builder
+
+	// 构建contexts内容，包含资料名称
+	for i, result := range searchResults {
+		if i > 0 {
+			contextsBuilder.WriteString("\n\n")
+		}
+		contextsBuilder.WriteString(fmt.Sprintf("[%d] 【%s】%s", i+1, result.KnowledgeTitle, result.Content))
+	}
+	
+	contextsStr := contextsBuilder.String()
+
+	// Detect language from user query
+	detectedLang := detectLanguage(query)
+	logger.Infof(ctx, "Detected language: %s", detectedLang)
+
+	// 使用WeKnora的模板渲染函数
+	contextTemplate := s.cfg.Conversation.Summary.ContextTemplate
+	if contextTemplate == "" {
+		// 使用类似 WeKnora detailed_context 的模板，要求引用来源
+		contextTemplate = "## Task Description\nAnswer the user's question accurately and comprehensively based on the provided reference materials.\n\n## Reference Materials\n{{contexts}}\n\n## User Question\n{{query}}\n\n## Response Requirements\n1. Answer only based on reference materials, do not fabricate information\n2. If multiple materials conflict, provide a comprehensive analysis\n3. Cite sources appropriately by adding the source document name in 【】 after each factual claim, e.g., \"双子座好奇心强【星座第一书】\"\n4. If materials are insufficient, clearly state so\n\n## CRITICAL: Language Rule\n- ALWAYS respond in {{language}}"
+	}
+
+	userContent := types.RenderPromptPlaceholders(contextTemplate, types.PlaceholderValues{
+		"query":    query,
+		"contexts": contextsStr,
+		"language": detectedLang,
+	})
+
+	if modelID == "" {
+		if len(knowledgeBaseIDs) > 0 {
+			kb, err := s.knowledgeBaseService.GetKnowledgeBaseByID(ctx, knowledgeBaseIDs[0])
+			if err == nil && kb != nil && kb.SummaryModelID != "" {
+				modelID = kb.SummaryModelID
+			}
+		}
+		if modelID == "" {
+			models, err := s.modelService.ListModels(ctx)
+			if err == nil {
+				for _, model := range models {
+					if model != nil && model.Type == types.ModelTypeKnowledgeQA {
+						modelID = model.ID
+						break
+					}
+				}
 			}
 		}
 	}
 
-	return ""
+	if modelID == "" {
+		return nil, fmt.Errorf("no model available for interpretation")
+	}
+
+	model, err := s.modelService.GetModelByID(ctx, modelID)
+	if err != nil {
+		logger.Errorf(ctx, "Failed to get model %s: %v", modelID, err)
+		return nil, err
+	}
+
+	chatInstance, err := chat.NewChat(&chat.ChatConfig{
+		ModelID:   model.ID,
+		APIKey:    model.Parameters.APIKey,
+		BaseURL:   model.Parameters.BaseURL,
+		ModelName: model.Name,
+		Source:    model.Source,
+		Provider:  model.Parameters.Provider,
+	}, nil)
+	if err != nil {
+		logger.Errorf(ctx, "Failed to create chat instance: %v", err)
+		return nil, err
+	}
+
+	// 使用配置的system prompt，并渲染{{contexts}}变量
+	systemPrompt := s.cfg.Conversation.Summary.Prompt
+	if systemPrompt == "" {
+		systemPrompt = "You are WeKnora, a professional intelligent information retrieval assistant. The following is retrieved information that may or may not be relevant:\n{{contexts}}\n\nPlease answer the user's question based on the retrieved information. Please use the same language as the user's question for both your thinking process and final answer.\n\n### Citation Rules (STRICT):\n- Factual claims must be cited using <kb doc=\"...\" /> format\n- The citation tag must be placed on the same line as the last sentence of the paragraph it supports\n- One citation per paragraph per source is enough\n- CORRECT: 金牛座是稳定踏实的星座。<kb doc=\"当代占星研究\" />\n- WRONG (line break before tag):\n  金牛座是稳定踏实的星座。\n  <kb doc=\"当代占星研究\" />"
+	}
+
+	// 渲染system prompt中的{{contexts}}变量
+	renderedSystemPrompt := types.RenderPromptPlaceholders(systemPrompt, types.PlaceholderValues{
+		"contexts": contextsStr,
+		"language": detectedLang,
+	})
+	
+	messages := []chat.Message{
+		{Role: "system", Content: renderedSystemPrompt},
+		{Role: "user", Content: userContent},
+	}
+
+	// Enable thinking mode if supported by the model
+	thinking := true
+	chatOptions := &chat.ChatOptions{
+		Temperature:         s.cfg.Conversation.Summary.Temperature,
+		MaxCompletionTokens: s.cfg.Conversation.Summary.MaxCompletionTokens,
+		Thinking:            &thinking,
+	}
+
+	logger.Infof(ctx, "Calling LLM for interpretation with model: %s, thinking enabled", modelID)
+	respChan, err := chatInstance.ChatStream(ctx, messages, chatOptions)
+	if err != nil {
+		logger.Errorf(ctx, "Failed to call LLM: %v", err)
+		return nil, err
+	}
+
+	var fullAnswer strings.Builder
+	for resp := range respChan {
+		// Only accumulate answer content, skip thinking content for non-streaming response
+		if resp.ResponseType == types.ResponseTypeAnswer {
+			fullAnswer.WriteString(resp.Content)
+		}
+	}
+
+	logger.Infof(ctx, "Knowledge interpretation completed, answer length: %d", fullAnswer.Len())
+
+	return &types.KnowledgeInterpretResponse{
+		Answer:  fullAnswer.String(),
+		Sources: sources,
+		Model:   modelID,
+		Success: true,
+	}, nil
 }
 
-// resolveWebFetchEnabled returns whether web fetch is enabled for a pipeline request.
-// Priority: agent config > request > default (true)
-func (s *sessionService) resolveWebFetchEnabled(req *types.QARequest) bool {
-	// If agent has explicit config, use it
-	if req.CustomAgent != nil && req.CustomAgent.Config.WebFetchEnabled != nil {
-		return *req.CustomAgent.Config.WebFetchEnabled
+// KnowledgeInterpretStream performs knowledge-based interpretation with LLM, returning streaming response
+func (s *sessionService) KnowledgeInterpretStream(ctx context.Context,
+	knowledgeBaseIDs []string, knowledgeIDs []string, query string, modelID string,
+	eventBus *event.EventBus, requestID string,
+) ([]types.KnowledgeInterpretSource, string, error) {
+	logger.Info(ctx, "Start streaming knowledge interpretation with LLM")
+	logger.Infof(ctx, "Knowledge interpret parameters, knowledge base IDs: %v, knowledge IDs: %v, query: %s, modelID: %s",
+		knowledgeBaseIDs, knowledgeIDs, query, modelID)
+
+	searchResults, err := s.SearchKnowledge(ctx, knowledgeBaseIDs, knowledgeIDs, query)
+	if err != nil {
+		logger.Errorf(ctx, "Failed to search knowledge: %v", err)
+		return nil, "", err
 	}
-	// Otherwise use request setting (which defaults to true)
-	return req.WebFetchEnabled
+
+	if len(searchResults) == 0 {
+		logger.Warn(ctx, "No search results found for interpretation")
+		// Send empty answer event
+		eventBus.Emit(ctx, event.Event{
+			ID:        requestID,
+			Type:      event.EventAgentFinalAnswer,
+			SessionID: requestID,
+			Data: event.AgentFinalAnswerData{
+				Content: "未找到相关知识，无法提供解读。",
+				Done:    true,
+			},
+		})
+		return []types.KnowledgeInterpretSource{}, modelID, nil
+	}
+
+	sources := make([]types.KnowledgeInterpretSource, 0, len(searchResults))
+	for _, result := range searchResults {
+		sources = append(sources, types.KnowledgeInterpretSource{
+			Title:       result.KnowledgeTitle,
+			KnowledgeID: result.KnowledgeID,
+			ChunkIndex:  result.ChunkIndex,
+		})
+	}
+
+	var contextsBuilder strings.Builder
+
+	// 构建contexts内容，包含资料名称
+	for i, result := range searchResults {
+		if i > 0 {
+			contextsBuilder.WriteString("\n\n")
+		}
+		contextsBuilder.WriteString(fmt.Sprintf("[%d] 【%s】%s", i+1, result.KnowledgeTitle, result.Content))
+	}
+	
+	contextsStr := contextsBuilder.String()
+
+	// Detect language from user query
+	detectedLang := detectLanguage(query)
+	logger.Infof(ctx, "Detected language: %s", detectedLang)
+
+	// 使用WeKnora的模板渲染函数
+	contextTemplate := s.cfg.Conversation.Summary.ContextTemplate
+	if contextTemplate == "" {
+		// 使用类似 WeKnora detailed_context 的模板，要求引用来源
+		contextTemplate = "## Task Description\nAnswer the user's question accurately and comprehensively based on the provided reference materials.\n\n## Reference Materials\n{{contexts}}\n\n## User Question\n{{query}}\n\n## Response Requirements\n1. Answer only based on reference materials, do not fabricate information\n2. If multiple materials conflict, provide a comprehensive analysis\n3. Cite sources appropriately by adding the source document name in 【】 after each factual claim, e.g., \"双子座好奇心强【星座第一书】\"\n4. If materials are insufficient, clearly state so\n\n## CRITICAL: Language Rule\n- ALWAYS respond in {{language}}"
+	}
+
+	userContent := types.RenderPromptPlaceholders(contextTemplate, types.PlaceholderValues{
+		"query":    query,
+		"contexts": contextsStr,
+		"language": detectedLang,
+	})
+
+	if modelID == "" {
+		if len(knowledgeBaseIDs) > 0 {
+			kb, err := s.knowledgeBaseService.GetKnowledgeBaseByID(ctx, knowledgeBaseIDs[0])
+			if err == nil && kb != nil && kb.SummaryModelID != "" {
+				modelID = kb.SummaryModelID
+			}
+		}
+		if modelID == "" {
+			models, err := s.modelService.ListModels(ctx)
+			if err == nil {
+				for _, model := range models {
+					if model != nil && model.Type == types.ModelTypeKnowledgeQA {
+						modelID = model.ID
+						break
+					}
+				}
+			}
+		}
+	}
+
+	if modelID == "" {
+		return nil, "", fmt.Errorf("no model available for interpretation")
+	}
+
+	model, err := s.modelService.GetModelByID(ctx, modelID)
+	if err != nil {
+		logger.Errorf(ctx, "Failed to get model %s: %v", modelID, err)
+		return nil, "", err
+	}
+
+	chatInstance, err := chat.NewChat(&chat.ChatConfig{
+		ModelID:   model.ID,
+		APIKey:    model.Parameters.APIKey,
+		BaseURL:   model.Parameters.BaseURL,
+		ModelName: model.Name,
+		Source:    model.Source,
+		Provider:  model.Parameters.Provider,
+	}, nil)
+	if err != nil {
+		logger.Errorf(ctx, "Failed to create chat instance: %v", err)
+		return nil, "", err
+	}
+
+	// 使用配置的system prompt，并渲染{{contexts}}变量
+	systemPrompt := s.cfg.Conversation.Summary.Prompt
+	if systemPrompt == "" {
+		systemPrompt = "You are WeKnora, a professional intelligent information retrieval assistant. The following is retrieved information that may or may not be relevant:\n{{contexts}}\n\nPlease answer the user's question based on the retrieved information. Please use the same language as the user's question for both your thinking process and final answer.\n\n### Citation Rules (STRICT):\n- Factual claims must be cited using <kb doc=\"...\" /> format\n- The citation tag must be placed on the same line as the last sentence of the paragraph it supports\n- One citation per paragraph per source is enough\n- CORRECT: 金牛座是稳定踏实的星座。<kb doc=\"当代占星研究\" />\n- WRONG (line break before tag):\n  金牛座是稳定踏实的星座。\n  <kb doc=\"当代占星研究\" />"
+	}
+
+	// 渲染system prompt中的{{contexts}}变量
+	renderedSystemPrompt := types.RenderPromptPlaceholders(systemPrompt, types.PlaceholderValues{
+		"contexts": contextsStr,
+		"language": detectedLang,
+	})
+
+	messages := []chat.Message{
+		{Role: "system", Content: renderedSystemPrompt},
+		{Role: "user", Content: userContent},
+	}
+
+	// Enable thinking mode if supported by the model
+	thinking := true
+	chatOptions := &chat.ChatOptions{
+		Temperature:         s.cfg.Conversation.Summary.Temperature,
+		MaxCompletionTokens: s.cfg.Conversation.Summary.MaxCompletionTokens,
+		Thinking:            &thinking,
+	}
+
+	logger.Infof(ctx, "Calling LLM for streaming interpretation with model: %s, thinking enabled", modelID)
+	respChan, err := chatInstance.ChatStream(ctx, messages, chatOptions)
+	if err != nil {
+		logger.Errorf(ctx, "Failed to call LLM: %v", err)
+		eventBus.Emit(ctx, event.Event{
+			ID:        requestID,
+			Type:      event.EventError,
+			SessionID: requestID,
+			Data: event.ErrorData{
+				Error:     err.Error(),
+				Stage:     "model_call",
+				SessionID: requestID,
+			},
+		})
+		return nil, "", err
+	}
+
+	// Process streaming responses
+	go func() {
+		var thinkingStarted bool
+
+		for resp := range respChan {
+			select {
+			case <-ctx.Done():
+				logger.Info(ctx, "Context cancelled, stopping stream")
+				return
+			default:
+			}
+
+			content := resp.Content
+			if content == "" && !resp.Done {
+				continue
+			}
+
+			// Use ResponseType to determine if this is thinking or answer content
+			// This is the correct WeKnora logic
+			switch resp.ResponseType {
+			case types.ResponseTypeThinking:
+				thinkingStarted = true
+				eventBus.Emit(ctx, event.Event{
+					ID:        requestID,
+					Type:      event.EventAgentThought,
+					SessionID: requestID,
+					Data: event.AgentThoughtData{
+						Content: content,
+						Done:    resp.Done,
+					},
+				})
+			case types.ResponseTypeAnswer:
+				eventBus.Emit(ctx, event.Event{
+					ID:        requestID,
+					Type:      event.EventAgentFinalAnswer,
+					SessionID: requestID,
+					Data: event.AgentFinalAnswerData{
+						Content: content,
+						Done:    resp.Done,
+					},
+				})
+			default:
+				// For unknown response types, treat as answer
+				eventBus.Emit(ctx, event.Event{
+					ID:        requestID,
+					Type:      event.EventAgentFinalAnswer,
+					SessionID: requestID,
+					Data: event.AgentFinalAnswerData{
+						Content: content,
+						Done:    resp.Done,
+					},
+				})
+			}
+		}
+
+		// Send done event for thinking if it was started
+		if thinkingStarted {
+			eventBus.Emit(ctx, event.Event{
+				ID:        requestID,
+				Type:      event.EventAgentThought,
+				SessionID: requestID,
+				Data: event.AgentThoughtData{
+					Content: "",
+					Done:    true,
+				},
+			})
+		}
+
+		// Make sure we send done event for answer if not already sent
+		eventBus.Emit(ctx, event.Event{
+			ID:        requestID,
+			Type:      event.EventAgentFinalAnswer,
+			SessionID: requestID,
+			Data: event.AgentFinalAnswerData{
+				Content: "",
+				Done:    true,
+			},
+		})
+
+		logger.Infof(ctx, "Streaming knowledge interpretation completed")
+	}()
+
+	return sources, modelID, nil
 }
 
-// resolveWebFetchTopN returns the number of web pages to fetch for a pipeline request.
-// Priority: agent config > tenant default > default (3)
-func (s *sessionService) resolveWebFetchTopN(req *types.QARequest) int {
-	// If agent has explicit config, use it
-	if req.CustomAgent != nil && req.CustomAgent.Config.WebFetchTopN > 0 {
-		return req.CustomAgent.Config.WebFetchTopN
+// detectLanguage detects the language of the input text
+// Returns: "zh-CN" for Simplified Chinese, "zh-TW" for Traditional Chinese, "en" for English, "zh" for other Chinese
+func detectLanguage(text string) string {
+	// Check for Traditional Chinese characters
+	traditionalChars := []rune{'這', '個', '們', '來', '時', '後', '經', '長', '國', '會', '發', '說', '問', '學', '點', '對', '過', '還', '應', '當', '進', '現', '實', '開', '問', '請', '們', '從', '為', '過', '來', '個', '說', '經', '長', '國', '時', '後', '會', '發', '點', '對', '還', '應', '當', '進', '現', '實', '開', '問', '請', '從', '為'}
+	
+	// Check for English characters
+	hasEnglish := false
+	hasChinese := false
+	traditionalCount := 0
+	
+	for _, r := range text {
+		// Check if it's an English letter
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') {
+			hasEnglish = true
+		}
+		// Check if it's a Chinese character
+		if r >= 0x4e00 && r <= 0x9fff {
+			hasChinese = true
+			// Check if it's a Traditional Chinese character
+			for _, tc := range traditionalChars {
+				if r == tc {
+					traditionalCount++
+					break
+				}
+			}
+		}
 	}
-	// Default to 3
-	return 3
-}
-
-// resolveWebSearchMaxResults returns the maximum number of web search results for a pipeline request.
-// Priority: agent config > tenant default > default (10)
-func (s *sessionService) resolveWebSearchMaxResults(ctx context.Context, req *types.QARequest) int {
-	if req.CustomAgent != nil && req.CustomAgent.Config.WebSearchMaxResults > 0 {
-		return req.CustomAgent.Config.WebSearchMaxResults
+	
+	// Determine language
+	if hasChinese {
+		if traditionalCount >= 2 {
+			return "zh-TW" // Traditional Chinese
+		}
+		return "zh-CN" // Simplified Chinese
 	}
-	tenantInfo, _ := types.TenantInfoFromContext(ctx)
-	if tenantInfo != nil && tenantInfo.WebSearchConfig != nil && tenantInfo.WebSearchConfig.MaxResults > 0 {
-		return tenantInfo.WebSearchConfig.MaxResults
+	
+	if hasEnglish {
+		return "en" // English
 	}
-	return 10
+	
+	return "zh" // Default to Chinese
 }
