@@ -961,22 +961,25 @@ func (s *sessionService) KnowledgeInterpret(ctx context.Context,
 	// 使用配置的system prompt，并渲染{{contexts}}变量
 	systemPrompt := s.cfg.Conversation.Summary.Prompt
 	if systemPrompt == "" {
-		systemPrompt = `You are WeKnora, a professional intelligent information retrieval assistant.
+		systemPrompt = `You are WeKnora, a professional intelligent information retrieval assistant. Answer based on the retrieved information below.
 
 ### Retrieved Information:
 {{contexts}}
 
-### Task:
-Answer the user's question based ONLY on the retrieved information above. Use the same language as the user's question.
+### Final Output Standards (STRICT):
+*   **Sourced (Inline Citations):** EVERY factual claim must be cited using <kb doc="DOCUMENT_NAME" /> format.
+    **Citation rules (ABSOLUTE):**
+    - The citation tag must be placed ON THE SAME LINE as the last sentence of the paragraph it supports, with NO line break before it.
+    - The DOCUMENT_NAME must match exactly with the "Source: XXX" labels in the Retrieved Information above.
+    - Do NOT repeat the same citation after every sentence. One citation per paragraph per source is enough.
+    - NEVER group all citations at the bottom of the answer. They must be distributed inline throughout the text.
+    - CORRECT: 太阳星座代表核心自我。<kb doc="当代占星研究" />
+    - WRONG (line break before tag):
+      太阳星座代表核心自我。
+      <kb doc="当代占星研究" />
 
-### CITATION REQUIREMENT - MANDATORY:
-For EVERY piece of information you use, you MUST add a citation immediately after the sentence using this exact format: <kb doc="SOURCE_NAME" />
-- The SOURCE_NAME must match the Source: XXX label in the retrieved information
-- Place the citation on the SAME LINE as the sentence
-- Example: 太阳星座代表核心自我。<kb doc="当代占星研究" />
-- If you use information from multiple sources, cite each one
-- NEVER omit citations
-- NEVER place citations on a new line`
+### Task:
+Answer the user's question based ONLY on the retrieved information above. Use {{language}}.`
 	}
 
 	// 渲染system prompt中的{{contexts}}变量
