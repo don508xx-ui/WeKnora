@@ -888,12 +888,12 @@ func (s *sessionService) KnowledgeInterpret(ctx context.Context,
 
 	var contextsBuilder strings.Builder
 
-	// 构建contexts内容，包含资料名称
+	// 构建contexts内容，包含资料名称（使用<kb>标签格式便于AI识别）
 	for i, result := range searchResults {
 		if i > 0 {
 			contextsBuilder.WriteString("\n\n")
 		}
-		contextsBuilder.WriteString(fmt.Sprintf("[%d] 【%s】%s", i+1, result.KnowledgeTitle, result.Content))
+		contextsBuilder.WriteString(fmt.Sprintf("[%d] Source: %s\n%s", i+1, result.KnowledgeTitle, result.Content))
 	}
 	
 	contextsStr := contextsBuilder.String()
@@ -961,7 +961,7 @@ func (s *sessionService) KnowledgeInterpret(ctx context.Context,
 	// 使用配置的system prompt，并渲染{{contexts}}变量
 	systemPrompt := s.cfg.Conversation.Summary.Prompt
 	if systemPrompt == "" {
-		systemPrompt = "You are WeKnora, a professional intelligent information retrieval assistant. The following is retrieved information that may or may not be relevant:\n{{contexts}}\n\nPlease answer the user's question based on the retrieved information. Please use the same language as the user's question for both your thinking process and final answer.\n\n### ABSOLUTE REQUIREMENT - CITATION MANDATORY:\nYou MUST cite the source for EVERY factual claim using the format: <kb doc=\"DOCUMENT_NAME\" />\n- Place the citation tag ON THE SAME LINE as the sentence it supports\n- Example: 太阳代表核心自我。<kb doc=\"当代占星研究\" />\n- NEVER omit citations\n- NEVER place citations on separate lines"
+		systemPrompt = "You are WeKnora, a professional intelligent information retrieval assistant.\n\n### Retrieved Information:\n{{contexts}}\n\n### Task:\nAnswer the user's question based ONLY on the retrieved information above. Use the same language as the user's question.\n\n### CITATION REQUIREMENT - MANDATORY:\nFor EVERY piece of information you use, you MUST add a citation immediately after the sentence using this exact format: <kb doc=\"SOURCE_NAME\" />\n- The SOURCE_NAME must match the "Source: XXX" label in the retrieved information\n- Place the citation on the SAME LINE as the sentence\n- Example: 太阳星座代表核心自我。<kb doc=\"当代占星研究\" />\n- If you use information from multiple sources, cite each one\n- NEVER omit citations\n- NEVER place citations on a new line"
 	}
 
 	// 渲染system prompt中的{{contexts}}变量
