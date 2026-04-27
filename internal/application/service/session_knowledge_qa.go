@@ -894,7 +894,11 @@ func (s *sessionService) KnowledgeInterpret(ctx context.Context,
 	}
 	
 	contextsStr := contextsBuilder.String()
-	
+
+	// Detect language from user query
+	detectedLang := detectLanguage(query)
+	logger.Infof(ctx, "Detected language: %s", detectedLang)
+
 	// 使用WeKnora的模板渲染函数
 	contextTemplate := s.cfg.Conversation.Summary.ContextTemplate
 	if contextTemplate == "" {
