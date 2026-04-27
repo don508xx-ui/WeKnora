@@ -4,22 +4,16 @@ package service
 
 import (
 	"context"
-	"encoding/json"
-	"errors"
 	"fmt"
-	"os"
 	"strings"
 	"time"
 
-	"github.com/Tencent/WeKnora/internal/agent/tools"
 	chatpipeline "github.com/Tencent/WeKnora/internal/application/service/chat_pipeline"
 	"github.com/Tencent/WeKnora/internal/common"
 	"github.com/Tencent/WeKnora/internal/event"
 	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/models/chat"
-	"github.com/Tencent/WeKnora/internal/models/rerank"
 	"github.com/Tencent/WeKnora/internal/types"
-	"github.com/Tencent/WeKnora/internal/types/interfaces"
 )
 
 // KnowledgeQA performs knowledge base question answering with LLM summarization
@@ -56,6 +50,7 @@ func (s *sessionService) KnowledgeQA(
 		req.CustomAgent = &types.CustomAgent{
 			ID: "knowledge_qa_default",
 			Config: types.CustomAgentConfig{
+				AgentMode:                   types.AgentModeSmartReasoning,
 				MaxIterations:               5,
 				Temperature:                 s.cfg.Conversation.Summary.Temperature,
 				WebSearchEnabled:            req.WebSearchEnabled,
@@ -70,7 +65,7 @@ func (s *sessionService) KnowledgeQA(
 				AllowedTools:                []string{}, // Use default tools
 				SystemPrompt:                "", // Use default system prompt
 				RerankModelID:               rerankModelID,
-				SummaryModelID:              chatModelID,
+				ModelID:                     chatModelID,
 				VLMModelID:                  "",
 				SkillsSelectionMode:         "none",
 				SelectedSkills:              []string{},
