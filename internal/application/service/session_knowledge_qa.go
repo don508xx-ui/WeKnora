@@ -583,7 +583,7 @@ func (s *sessionService) SearchKnowledge(ctx context.Context,
 			EmbeddingTopK:    rc.GetEffectiveEmbeddingTopK(),
 			VectorThreshold:  rc.GetEffectiveVectorThreshold(),
 			KeywordThreshold: rc.GetEffectiveKeywordThreshold(),
-			RerankTopK:       rc.GetEffectiveRerankTopK(),
+			RerankTopK:       50, // Increase to get more results from different documents
 			RerankThreshold:  rc.GetEffectiveRerankThreshold(),
 		},
 		PipelineState: types.PipelineState{
@@ -640,8 +640,32 @@ func (s *sessionService) SearchKnowledge(ctx context.Context,
 		logger.Infof(ctx, "Event %v triggered successfully", event)
 	}
 
-	logger.Infof(ctx, "Knowledge base search completed, found %d results", len(chatManage.MergeResult))
-	return chatManage.MergeResult, nil
+	logger.Infof(ctx, "Knowledge base search completed, found %d results before deduplication", len(chatManage.MergeResult))
+
+	// Deduplicate by KnowledgeID to ensure each document appears only once
+	deduplicatedResults := deduplicateByKnowledgeID(chatManage.MergeResult)
+	logger.Infof(ctx, "After deduplication by KnowledgeID: %d results", len(deduplicatedResults))
+
+	return deduplicatedResults, nil
+}
+
+// deduplicateByKnowledgeID removes duplicate search results based on KnowledgeID,
+// keeping only the first (highest scored) result for each knowledge document.
+func deduplicateByKnowledgeID(results []*types.SearchResult) []*types.SearchResult {
+	seen := make(map[string]bool)
+	deduplicated := make([]*types.SearchResult, 0)
+
+	for _, result := range results {
+		if result == nil {
+			continue
+		}
+		if !seen[result.KnowledgeID] {
+			seen[result.KnowledgeID] = true
+			deduplicated = append(deduplicated, result)
+		}
+	}
+
+	return deduplicated
 }
 
 // handleFallbackResponse handles fallback response based on strategy
