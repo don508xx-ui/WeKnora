@@ -29,6 +29,10 @@ func (s *sessionService) KnowledgeQA(
 		// Resolve knowledge bases first (same as original KnowledgeQA)
 		knowledgeBaseIDs, knowledgeIDs := s.resolveKnowledgeBases(ctx, req)
 		
+		// Set knowledge bases back to req so AgentQA can use them
+		req.KnowledgeBaseIDs = knowledgeBaseIDs
+		req.KnowledgeIDs = knowledgeIDs
+		
 		// Resolve model (same as original KnowledgeQA)
 		chatModelID, err := s.resolveChatModelID(ctx, req, knowledgeBaseIDs, knowledgeIDs)
 		if err != nil {
@@ -71,7 +75,8 @@ func (s *sessionService) KnowledgeQA(
 				SelectedSkills:              []string{},
 			},
 		}
-		logger.Infof(ctx, "Created default custom agent for KnowledgeQA, model: %s, rerank: %s", chatModelID, rerankModelID)
+		logger.Infof(ctx, "Created default custom agent for KnowledgeQA, model: %s, rerank: %s, KB count: %d, Knowledge count: %d", 
+			chatModelID, rerankModelID, len(knowledgeBaseIDs), len(knowledgeIDs))
 	}
 
 	// Directly delegate to AgentQA logic
