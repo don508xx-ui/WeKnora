@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net/http"
 	"runtime"
-	"strings"
 	"time"
 
 	"github.com/Tencent/WeKnora/internal/errors"
