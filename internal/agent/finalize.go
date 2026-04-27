@@ -52,9 +52,55 @@ func (e *AgentEngine) streamFinalAnswerToEventBus(
 	for stepIdx, step := range state.RoundSteps {
 		for toolIdx, toolCall := range step.ToolCalls {
 			toolResultCount++
+
+			// Build content with tool output and document references from Data
+			content := fmt.Sprintf("Tool %s returned: %s", toolCall.Name, toolCall.Result.Output)
+
+			// Extract document references from ToolResult.Data for citation
+			if toolCall.Result != nil && toolCall.Result.Data != nil {
+				docRefs := "\n\n=== Document References for Citation ===\n"
+				hasRefs := false
+
+				// Handle knowledge_search results
+				if results, ok := toolCall.Result.Data["results"].([]interface{}); ok && len(results) > 0 {
+					for i, r := range results {
+						if resultMap, ok := r.(map[string]interface{}); ok {
+							chunkID, _ := resultMap["chunk_id"].(string)
+							knowledgeTitle, _ := resultMap["knowledge_title"].(string)
+							knowledgeID, _ := resultMap["knowledge_id"].(string)
+							if chunkID != "" && knowledgeTitle != "" {
+								docRefs += fmt.Sprintf("[%d] doc=\"%s\" chunk_id=\"%s\" (knowledge_id: %s)\n",
+									i+1, knowledgeTitle, chunkID, knowledgeID)
+								hasRefs = true
+							}
+						}
+					}
+				}
+
+				// Handle list_knowledge_chunks results
+				if chunks, ok := toolCall.Result.Data["chunks"].([]interface{}); ok && len(chunks) > 0 {
+					knowledgeTitle, _ := toolCall.Result.Data["knowledge_title"].(string)
+					for i, c := range chunks {
+						if chunkMap, ok := c.(map[string]interface{}); ok {
+							chunkID, _ := chunkMap["chunk_id"].(string)
+							knowledgeID, _ := chunkMap["knowledge_id"].(string)
+							if chunkID != "" && knowledgeTitle != "" {
+								docRefs += fmt.Sprintf("[%d] doc=\"%s\" chunk_id=\"%s\" (knowledge_id: %s)\n",
+									i+1, knowledgeTitle, chunkID, knowledgeID)
+								hasRefs = true
+							}
+						}
+					}
+				}
+
+				if hasRefs {
+					content += docRefs
+				}
+			}
+
 			messages = append(messages, chat.Message{
 				Role:    "user",
-				Content: fmt.Sprintf("Tool %s returned: %s", toolCall.Name, toolCall.Result.Output),
+				Content: content,
 			})
 			logger.Debugf(ctx, "[Agent][FinalAnswer] Added tool result [Step-%d][Tool-%d]: %s (output: %d chars)",
 				stepIdx+1, toolIdx+1, toolCall.Name, len(toolCall.Result.Output))
@@ -72,6 +118,7 @@ User question: %s
 Requirements:
 1. Answer based on the actually retrieved content
 2. CLEARLY CITE INFORMATION SOURCES USING <kb doc="..." chunk_id="..." /> FORMAT (STRICTLY FOLLOW THE RULES BELOW)
+   - Use the EXACT doc name and chunk_id from the "Document References for Citation" section above
    - The citation tag must be placed ON THE SAME LINE as the last sentence of the paragraph it supports, NO LINE BREAK before it
    - One citation per paragraph per source is enough
    - NEVER group all citations at the bottom, distribute them inline throughout
