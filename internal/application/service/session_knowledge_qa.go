@@ -10,6 +10,7 @@ import (
 
 	chatpipeline "github.com/Tencent/WeKnora/internal/application/service/chat_pipeline"
 	"github.com/Tencent/WeKnora/internal/common"
+	"github.com/Tencent/WeKnora/internal/config"
 	"github.com/Tencent/WeKnora/internal/event"
 	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/models/chat"
@@ -51,6 +52,18 @@ func (s *sessionService) KnowledgeQA(
 			}
 		}
 
+		// Load default agent system prompt from config
+		var systemPrompt string
+		if s.cfg.PromptTemplates != nil && len(s.cfg.PromptTemplates.AgentSystemPrompt) > 0 {
+			if defaultTemplate := config.DefaultTemplate(s.cfg.PromptTemplates.AgentSystemPrompt); defaultTemplate != nil {
+				systemPrompt = defaultTemplate.Content
+				logger.Infof(ctx, "Loaded default agent system prompt: %s", defaultTemplate.ID)
+			}
+		}
+		if systemPrompt == "" {
+			logger.Warn(ctx, "No default agent system prompt found, using empty system prompt")
+		}
+
 		req.CustomAgent = &types.CustomAgent{
 			ID: "knowledge_qa_default",
 			Config: types.CustomAgentConfig{
@@ -67,7 +80,7 @@ func (s *sessionService) KnowledgeQA(
 				Thinking:                    s.cfg.Conversation.Summary.Thinking,
 				RetrieveKBOnlyWhenMentioned: false,
 				AllowedTools:                []string{}, // Use default tools
-				SystemPrompt:                "", // Use default system prompt
+				SystemPrompt:                systemPrompt, // Load from config
 				RerankModelID:               rerankModelID,
 				ModelID:                     chatModelID,
 				VLMModelID:                  "",
