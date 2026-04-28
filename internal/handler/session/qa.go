@@ -736,7 +736,7 @@ func (h *Handler) KnowledgeInterpret(c *gin.Context) {
 	// Resolve custom agent (nil for knowledge interpret - use default)
 	reqCtx.customAgent = nil
 
-	logger.Infof(ctx, "Knowledge interpret using Agent mode, session ID: %s", sessionID)
+	logger.Infof(ctx, "Knowledge interpret using Agent mode v2, session ID: %s", sessionID)
 
 	// DIRECT COPY from AgentQA: Always use Agent mode
 	h.executeQA(reqCtx, qaModeAgent, false)
