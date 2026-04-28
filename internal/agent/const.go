@@ -26,7 +26,8 @@ const (
 	defaultToolExecTimeout = 60 * time.Second
 
 	// maxLLMRetries is the maximum number of retries for transient LLM errors.
-	maxLLMRetries = 2
+	// Increased to 5 for better handling of rate limits during testing
+	maxLLMRetries = 5
 
 	// maxEmptyResponseRetries is the maximum number of retries when the LLM
 	// returns an empty content with a natural stop (no tool calls). This guards
