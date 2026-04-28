@@ -115,22 +115,28 @@ func (e *AgentEngine) streamFinalAnswerToEventBus(
 
 User question: %s
 
-Requirements:
-1. Answer based on the actually retrieved content
-2. CLEARLY CITE INFORMATION SOURCES USING <kb doc="..." chunk_id="..." /> FORMAT (STRICTLY FOLLOW THE RULES BELOW)
+CRITICAL REQUIREMENTS:
+1. Answer MUST be based on the actually retrieved content from the tool results above
+2. EVERY FACTUAL CLAIM MUST include a citation using <kb doc="..." chunk_id="..." /> format
    - Use the EXACT doc name and chunk_id from the "Document References for Citation" section above
    - The citation tag must be placed ON THE SAME LINE as the last sentence of the paragraph it supports, NO LINE BREAK before it
    - One citation per paragraph per source is enough
    - NEVER group all citations at the bottom, distribute them inline throughout
-   - CORRECT EXAMPLE: 扩容业务影响时间由天级降低到分钟级。<kb doc="文档A" chunk_id="xxx" />
-   - WRONG EXAMPLE (line break): 
-     扩容业务影响时间由天级降低到分钟级。
-     <kb doc="文档A" chunk_id="xxx" />
+   - CORRECT: 太阳星座代表一个人的外在形象。<kb doc="占星基础" chunk_id="123" />
+   - WRONG (missing citation): 太阳星座代表一个人的外在形象。
+   - WRONG (line break): 
+     太阳星座代表一个人的外在形象。
+     <kb doc="占星基础" chunk_id="123" />
+   - WRONG (using brackets): 太阳星座代表一个人的外在形象。[1] or {1}
+   - WRONG (using book name only): 太阳星座代表一个人的外在形象。(占星基础)
 3. Organize the answer in a structured format
 4. If information is insufficient, honestly state so
 5. IMPORTANT: Respond in the same language as the user's question
 
-Now generate the final answer:`, query)
+MANDATORY: You MUST include <kb doc="..." chunk_id="..." /> citations for every piece of information from the knowledge base. This is NOT optional.
+DO NOT use [1], {1}, or any other citation format. ONLY use <kb doc="..." chunk_id="..." /> format.
+
+Now generate the final answer with proper citations:`, query)
 
 	messages = append(messages, chat.Message{
 		Role:    "user",

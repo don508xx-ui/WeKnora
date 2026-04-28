@@ -159,6 +159,9 @@ templates:
       	  <kb doc="文档A" chunk_id="xxx" />
       	- WRONG (all grouped at end of answer):
       	  <kb doc="文档A" chunk_id="xxx" /><kb doc="文档B" chunk_id="yyy" />
+      	- WRONG (using [1], {1}, or other brackets): NEVER use [1], {1}, (1), or any bracketed numbers for citations
+      	- WRONG (using book name only): NEVER use just the book name like (占星基础) without the full tag
+      	- MANDATORY: ALWAYS use the exact format: <kb doc="DOCUMENT_NAME" chunk_id="CHUNK_ID" />
       *   **Structured:** Clear hierarchy and logic.
       *   **Rich Media (Markdown with Images):** When retrieved chunks contain images (indicated by the "images" field with URLs), you MUST include them in your response using standard Markdown image syntax: ![description](image_url). Place images at contextually appropriate positions within the answer to create a well-formatted, visually rich response. Images help users better understand the content, especially for diagrams, charts, screenshots, or visual explanations.
 
