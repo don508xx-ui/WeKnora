@@ -1,7 +1,5 @@
 package service
 
-// Trigger deployment - v4 - Force Zeabur deploy
-
 import (
 	"context"
 	"fmt"
@@ -24,63 +22,198 @@ func (s *sessionService) KnowledgeQA(
 	req *types.QARequest,
 	eventBus *event.EventBus,
 ) error {
-	// If customAgent is not provided, create a default one
-	if req.CustomAgent == nil {
-		// Resolve knowledge bases first (same as original KnowledgeQA)
-		knowledgeBaseIDs, knowledgeIDs := s.resolveKnowledgeBases(ctx, req)
-		
-		// Set knowledge bases back to req so AgentQA can use them
-		req.KnowledgeBaseIDs = knowledgeBaseIDs
-		req.KnowledgeIDs = knowledgeIDs
-		
-		// Resolve model (same as original KnowledgeQA)
-		chatModelID, err := s.resolveChatModelID(ctx, req, knowledgeBaseIDs, knowledgeIDs)
-		if err != nil {
-			return err
-		}
+	logger.Infof(
+		ctx,
+		"Knowledge base question answering parameters, session ID: %s, query: %s, webSearchEnabled: %v, enableMemory: %v",
+		req.Session.ID,
+		req.Query,
+		req.WebSearchEnabled,
+		req.EnableMemory,
+	)
 
-		// Resolve rerank model
-		var rerankModelID string
-		if len(knowledgeBaseIDs) > 0 || len(knowledgeIDs) > 0 {
-			models, _ := s.modelService.ListModels(ctx)
-			for _, model := range models {
-				if model != nil && model.Type == types.ModelTypeRerank {
-					rerankModelID = model.ID
-					break
-				}
-			}
-		}
+	// Resolve knowledge bases using shared helper
+	knowledgeBaseIDs, knowledgeIDs := s.resolveKnowledgeBases(ctx, req)
 
-		req.CustomAgent = &types.CustomAgent{
-			ID: "knowledge_qa_default",
-			Config: types.CustomAgentConfig{
-				AgentMode:                   types.AgentModeSmartReasoning,
-				MaxIterations:               5,
-				Temperature:                 s.cfg.Conversation.Summary.Temperature,
-				WebSearchEnabled:            req.WebSearchEnabled,
-				WebSearchMaxResults:         0, // Use tenant default
-				WebSearchProviderID:         "",
-				MultiTurnEnabled:            true,
-				HistoryTurns:                5,
-				MCPSelectionMode:            "auto",
-				MCPServices:                 []string{},
-				Thinking:                    s.cfg.Conversation.Summary.Thinking,
-				RetrieveKBOnlyWhenMentioned: false,
-				AllowedTools:                []string{}, // Use default tools
-				SystemPrompt:                "", // Use default system prompt
-				RerankModelID:               rerankModelID,
-				ModelID:                     chatModelID,
-				VLMModelID:                  "",
-				SkillsSelectionMode:         "none",
-				SelectedSkills:              []string{},
-			},
-		}
-		logger.Infof(ctx, "Created default custom agent for KnowledgeQA, model: %s, rerank: %s, KB count: %d, Knowledge count: %d", 
-			chatModelID, rerankModelID, len(knowledgeBaseIDs), len(knowledgeIDs))
+	// Resolve chat model ID using shared helper
+	chatModelID, err := s.resolveChatModelID(ctx, req, knowledgeBaseIDs, knowledgeIDs)
+	if err != nil {
+		return err
 	}
 
-	// Directly delegate to AgentQA logic
-	return s.AgentQA(ctx, req, eventBus)
+	// Initialize ChatManage defaults from config.yaml
+	summaryConfig := types.SummaryConfig{
+		Prompt:              s.cfg.Conversation.Summary.Prompt,
+		ContextTemplate:     s.cfg.Conversation.Summary.ContextTemplate,
+		Temperature:         s.cfg.Conversation.Summary.Temperature,
+		NoMatchPrefix:       s.cfg.Conversation.Summary.NoMatchPrefix,
+		MaxCompletionTokens: s.cfg.Conversation.Summary.MaxCompletionTokens,
+		Thinking:            s.cfg.Conversation.Summary.Thinking,
+	}
+	fallbackStrategy := types.FallbackStrategy(s.cfg.Conversation.FallbackStrategy)
+	if fallbackStrategy == "" {
+		fallbackStrategy = types.FallbackStrategyFixed
+		logger.Infof(ctx, "Fallback strategy not set, using default: %v", fallbackStrategy)
+	}
+
+	// Resolve chat model vision capability and VLM model ID for image routing
+	var chatModelSupportsVision bool
+	var vlmModelID string
+	if chatModelID != "" {
+		if chatModelInfo, err := s.modelService.GetModelByID(ctx, chatModelID); err == nil && chatModelInfo != nil {
+			chatModelSupportsVision = chatModelInfo.Parameters.SupportsVision
+		}
+	}
+	if req.CustomAgent != nil {
+		vlmModelID = req.CustomAgent.Config.VLMModelID
+	}
+
+	// Resolve retrieval tenant scope using shared helper
+	retrievalTenantID := s.resolveRetrievalTenantID(ctx, req)
+
+	// Build unified search targets (computed once, used throughout pipeline)
+	searchTargets, err := s.buildSearchTargets(ctx, retrievalTenantID, knowledgeBaseIDs, knowledgeIDs)
+	if err != nil {
+		logger.Warnf(ctx, "Failed to build search targets: %v", err)
+	}
+
+	// Create chat management object with session settings
+	logger.Infof(
+		ctx,
+		"Creating chat manage object, knowledge base IDs: %v, knowledge IDs: %v, chat model ID: %s, search targets: %d",
+		knowledgeBaseIDs,
+		knowledgeIDs,
+		chatModelID,
+		len(searchTargets),
+	)
+
+	// Get UserID from context
+	userID, _ := types.UserIDFromContext(ctx)
+
+	chatManage := &types.ChatManage{
+		PipelineRequest: types.PipelineRequest{
+			Query:                   req.Query,
+			SessionID:               req.Session.ID,
+			UserID:                  userID,
+			EnableMemory:            req.EnableMemory,
+			MaxRounds:               s.cfg.Conversation.MaxRounds,
+			KnowledgeBaseIDs:        knowledgeBaseIDs,
+			KnowledgeIDs:            knowledgeIDs,
+			SearchTargets:           searchTargets,
+			VectorThreshold:         s.cfg.Conversation.VectorThreshold,
+			KeywordThreshold:        s.cfg.Conversation.KeywordThreshold,
+			EmbeddingTopK:           s.cfg.Conversation.EmbeddingTopK,
+			RerankTopK:              s.cfg.Conversation.RerankTopK,
+			RerankThreshold:         s.cfg.Conversation.RerankThreshold,
+			ChatModelID:             chatModelID,
+			SummaryConfig:           summaryConfig,
+			FallbackStrategy:        fallbackStrategy,
+			FallbackResponse:        s.cfg.Conversation.FallbackResponse,
+			FallbackPrompt:          s.cfg.Conversation.FallbackPrompt,
+			EnableRewrite:           s.cfg.Conversation.EnableRewrite,
+			EnableQueryExpansion:    s.cfg.Conversation.EnableQueryExpansion,
+			RewritePromptSystem:     s.cfg.Conversation.RewritePromptSystem,
+			RewritePromptUser:       s.cfg.Conversation.RewritePromptUser,
+			WebSearchEnabled:        req.WebSearchEnabled,
+			WebSearchProviderID:     s.resolveWebSearchProviderID(ctx, req, retrievalTenantID),
+			WebFetchEnabled:         s.resolveWebFetchEnabled(req),
+			WebFetchTopN:            s.resolveWebFetchTopN(req),
+			TenantID:                retrievalTenantID,
+			Images:                  req.ImageURLs,
+			VLMModelID:              vlmModelID,
+			ChatModelSupportsVision: chatModelSupportsVision,
+			Language:                types.LanguageNameFromContext(ctx),
+		},
+		PipelineState: types.PipelineState{
+			RewriteQuery:     req.Query,
+			ImageDescription: req.ImageDescription,
+			QuotedContext:    req.QuotedContext,
+		},
+		PipelineContext: types.PipelineContext{
+			EventBus:      eventBus.AsEventBusInterface(),
+			MessageID:     req.AssistantMessageID,
+			UserMessageID: req.UserMessageID,
+		},
+	}
+
+	// Apply custom agent overrides (system prompt, temperature, retrieval params,
+	// rewrite, fallback, FAQ strategy, history turns)
+	s.applyAgentOverridesToChatManage(ctx, req.CustomAgent, chatManage)
+
+	// Determine pipeline based on knowledge bases availability and web search setting
+	hasKB := len(knowledgeBaseIDs) > 0 || len(knowledgeIDs) > 0
+	needsRAG := hasKB || req.WebSearchEnabled
+	hasHistory := chatManage.MaxRounds > 0
+
+	var pipeline []types.EventType
+	if !needsRAG {
+		// Pure chat — no retrieval needed.
+		userContent := req.Query
+		if req.ImageDescription != "" && !chatModelSupportsVision {
+			userContent += "\n\n[用户上传图片内容]\n" + req.ImageDescription
+		}
+		if req.QuotedContext != "" {
+			userContent += "\n\n" + req.QuotedContext
+		}
+		chatManage.UserContent = userContent
+
+		pipeline = types.NewPipelineBuilder().
+			AddIf(hasHistory, types.LOAD_HISTORY).
+			AddIf(chatManage.EnableMemory, types.MEMORY_RETRIEVAL).
+			Add(types.CHAT_COMPLETION_STREAM).
+			AddIf(chatManage.EnableMemory, types.MEMORY_STORAGE).
+			Build()
+	} else {
+		// RAG — dynamically assemble based on feature flags.
+		pipeline = types.NewPipelineBuilder().
+			Add(types.LOAD_HISTORY).
+			Add(types.QUERY_UNDERSTAND).
+			Add(types.CHUNK_SEARCH_PARALLEL).
+			Add(types.CHUNK_RERANK).
+			AddIf(req.WebSearchEnabled, types.WEB_FETCH).
+			Add(types.CHUNK_MERGE).
+			Add(types.FILTER_TOP_K).
+			Add(types.DATA_ANALYSIS).
+			Add(types.INTO_CHAT_MESSAGE).
+			Add(types.CHAT_COMPLETION_STREAM).
+			Build()
+	}
+
+	logger.Infof(ctx, "Assembled pipeline (%d stages), hasKB=%v, webSearch=%v, history=%v",
+		len(pipeline), hasKB, req.WebSearchEnabled, hasHistory)
+
+	// Start knowledge QA event processing (set session tenant so pipeline session/message lookups use session owner)
+	ctx = context.WithValue(ctx, types.SessionTenantIDContextKey, req.Session.TenantID)
+	logger.Info(ctx, "Triggering question answering event")
+	err = s.KnowledgeQAByEvent(ctx, chatManage, pipeline)
+	if err != nil {
+		logger.ErrorWithFields(ctx, err, map[string]interface{}{
+			"session_id": req.Session.ID,
+		})
+		return err
+	}
+
+	// Emit references event if we have search results
+	if len(chatManage.MergeResult) > 0 {
+		logger.Infof(ctx, "Emitting references event with %d results", len(chatManage.MergeResult))
+		if err := eventBus.Emit(ctx, event.Event{
+			ID:        generateEventID("references"),
+			Type:      event.EventAgentReferences,
+			SessionID: req.Session.ID,
+			Data: event.AgentReferencesData{
+				References: chatManage.MergeResult,
+			},
+		}); err != nil {
+			logger.Errorf(ctx, "Failed to emit references event: %v", err)
+		}
+	}
+
+	// Note: Answer events are now emitted directly by chat_completion_stream plugin
+	// Completion event will be emitted when the last answer event has Done=true
+	// We can optionally add a completion watcher here if needed, but for now
+	// the frontend can detect completion from the Done flag
+
+	logger.Info(ctx, "Knowledge base question answering initiated")
+	return nil
 }
 
 // selectChatModelID selects the appropriate chat model ID with priority for Remote models
@@ -751,32 +884,27 @@ func (s *sessionService) KnowledgeInterpret(ctx context.Context,
 	}
 
 	var contextsBuilder strings.Builder
-
-	// 构建contexts内容，包含资料名称
+	
+	// 构建contexts内容
 	for i, result := range searchResults {
 		if i > 0 {
 			contextsBuilder.WriteString("\n\n")
 		}
-		contextsBuilder.WriteString(fmt.Sprintf("[%d] 【%s】%s", i+1, result.KnowledgeTitle, result.Content))
+		contextsBuilder.WriteString(fmt.Sprintf("[%d] %s", i+1, result.Content))
 	}
 	
 	contextsStr := contextsBuilder.String()
-
-	// Detect language from user query
-	detectedLang := detectLanguage(query)
-	logger.Infof(ctx, "Detected language: %s", detectedLang)
-
+	
 	// 使用WeKnora的模板渲染函数
 	contextTemplate := s.cfg.Conversation.Summary.ContextTemplate
 	if contextTemplate == "" {
-		// 使用类似 WeKnora detailed_context 的模板，要求引用来源
-		contextTemplate = "## Task Description\nAnswer the user's question accurately and comprehensively based on the provided reference materials.\n\n## Reference Materials\n{{contexts}}\n\n## User Question\n{{query}}\n\n## Response Requirements\n1. Answer only based on reference materials, do not fabricate information\n2. If multiple materials conflict, provide a comprehensive analysis\n3. Cite sources appropriately by adding the source document name in 【】 after each factual claim, e.g., \"双子座好奇心强【星座第一书】\"\n4. If materials are insufficient, clearly state so\n\n## CRITICAL: Language Rule\n- ALWAYS respond in {{language}}"
+		contextTemplate = "基于以下参考资料回答问题：\n\n{{contexts}}\n\n问题：{{query}}"
 	}
-
+	
 	userContent := types.RenderPromptPlaceholders(contextTemplate, types.PlaceholderValues{
 		"query":    query,
 		"contexts": contextsStr,
-		"language": detectedLang,
+		"language": "zh",
 	})
 
 	if modelID == "" {
@@ -822,12 +950,16 @@ func (s *sessionService) KnowledgeInterpret(ctx context.Context,
 		return nil, err
 	}
 
+	// Detect language from user query
+	detectedLang := detectLanguage(query)
+	logger.Infof(ctx, "Detected language: %s", detectedLang)
+	
 	// 使用配置的system prompt，并渲染{{contexts}}变量
 	systemPrompt := s.cfg.Conversation.Summary.Prompt
 	if systemPrompt == "" {
-		systemPrompt = "You are WeKnora, a professional intelligent information retrieval assistant. The following is retrieved information that may or may not be relevant:\n{{contexts}}\n\nPlease answer the user's question based on the retrieved information. Please use the same language as the user's question for both your thinking process and final answer.\n\n### Citation Rules (STRICT):\n- Factual claims must be cited using <kb doc=\"...\" /> format\n- The citation tag must be placed on the same line as the last sentence of the paragraph it supports\n- One citation per paragraph per source is enough\n- CORRECT: 金牛座是稳定踏实的星座。<kb doc=\"当代占星研究\" />\n- WRONG (line break before tag):\n  金牛座是稳定踏实的星座。\n  <kb doc=\"当代占星研究\" />"
+		systemPrompt = "You are WeKnora, a professional intelligent information retrieval assistant. The following is retrieved information that may or may not be relevant:\n{{contexts}}\n\nPlease answer the user's question based on the retrieved information."
 	}
-
+	
 	// 渲染system prompt中的{{contexts}}变量
 	renderedSystemPrompt := types.RenderPromptPlaceholders(systemPrompt, types.PlaceholderValues{
 		"contexts": contextsStr,
@@ -839,15 +971,12 @@ func (s *sessionService) KnowledgeInterpret(ctx context.Context,
 		{Role: "user", Content: userContent},
 	}
 
-	// Enable thinking mode if supported by the model
-	thinking := true
 	chatOptions := &chat.ChatOptions{
 		Temperature:         s.cfg.Conversation.Summary.Temperature,
 		MaxCompletionTokens: s.cfg.Conversation.Summary.MaxCompletionTokens,
-		Thinking:            &thinking,
 	}
 
-	logger.Infof(ctx, "Calling LLM for interpretation with model: %s, thinking enabled", modelID)
+	logger.Infof(ctx, "Calling LLM for interpretation with model: %s", modelID)
 	respChan, err := chatInstance.ChatStream(ctx, messages, chatOptions)
 	if err != nil {
 		logger.Errorf(ctx, "Failed to call LLM: %v", err)
@@ -856,10 +985,7 @@ func (s *sessionService) KnowledgeInterpret(ctx context.Context,
 
 	var fullAnswer strings.Builder
 	for resp := range respChan {
-		// Only accumulate answer content, skip thinking content for non-streaming response
-		if resp.ResponseType == types.ResponseTypeAnswer {
-			fullAnswer.WriteString(resp.Content)
-		}
+		fullAnswer.WriteString(resp.Content)
 	}
 
 	logger.Infof(ctx, "Knowledge interpretation completed, answer length: %d", fullAnswer.Len())
@@ -912,32 +1038,27 @@ func (s *sessionService) KnowledgeInterpretStream(ctx context.Context,
 	}
 
 	var contextsBuilder strings.Builder
-
-	// 构建contexts内容，包含资料名称
+	
+	// 构建contexts内容
 	for i, result := range searchResults {
 		if i > 0 {
 			contextsBuilder.WriteString("\n\n")
 		}
-		contextsBuilder.WriteString(fmt.Sprintf("[%d] 【%s】%s", i+1, result.KnowledgeTitle, result.Content))
+		contextsBuilder.WriteString(fmt.Sprintf("[%d] %s", i+1, result.Content))
 	}
 	
 	contextsStr := contextsBuilder.String()
-
-	// Detect language from user query
-	detectedLang := detectLanguage(query)
-	logger.Infof(ctx, "Detected language: %s", detectedLang)
-
+	
 	// 使用WeKnora的模板渲染函数
 	contextTemplate := s.cfg.Conversation.Summary.ContextTemplate
 	if contextTemplate == "" {
-		// 使用类似 WeKnora detailed_context 的模板，要求引用来源
-		contextTemplate = "## Task Description\nAnswer the user's question accurately and comprehensively based on the provided reference materials.\n\n## Reference Materials\n{{contexts}}\n\n## User Question\n{{query}}\n\n## Response Requirements\n1. Answer only based on reference materials, do not fabricate information\n2. If multiple materials conflict, provide a comprehensive analysis\n3. Cite sources appropriately by adding the source document name in 【】 after each factual claim, e.g., \"双子座好奇心强【星座第一书】\"\n4. If materials are insufficient, clearly state so\n\n## CRITICAL: Language Rule\n- ALWAYS respond in {{language}}"
+		contextTemplate = "基于以下参考资料回答问题：\n\n{{contexts}}\n\n问题：{{query}}"
 	}
-
+	
 	userContent := types.RenderPromptPlaceholders(contextTemplate, types.PlaceholderValues{
 		"query":    query,
 		"contexts": contextsStr,
-		"language": detectedLang,
+		"language": "zh",
 	})
 
 	if modelID == "" {
@@ -983,32 +1104,33 @@ func (s *sessionService) KnowledgeInterpretStream(ctx context.Context,
 		return nil, "", err
 	}
 
+	// Detect language from user query
+	detectedLang := detectLanguage(query)
+	logger.Infof(ctx, "Detected language: %s", detectedLang)
+
 	// 使用配置的system prompt，并渲染{{contexts}}变量
 	systemPrompt := s.cfg.Conversation.Summary.Prompt
 	if systemPrompt == "" {
-		systemPrompt = "You are WeKnora, a professional intelligent information retrieval assistant. The following is retrieved information that may or may not be relevant:\n{{contexts}}\n\nPlease answer the user's question based on the retrieved information. Please use the same language as the user's question for both your thinking process and final answer.\n\n### Citation Rules (STRICT):\n- Factual claims must be cited using <kb doc=\"...\" /> format\n- The citation tag must be placed on the same line as the last sentence of the paragraph it supports\n- One citation per paragraph per source is enough\n- CORRECT: 金牛座是稳定踏实的星座。<kb doc=\"当代占星研究\" />\n- WRONG (line break before tag):\n  金牛座是稳定踏实的星座。\n  <kb doc=\"当代占星研究\" />"
+		systemPrompt = "You are WeKnora, a professional intelligent information retrieval assistant. The following is retrieved information that may or may not be relevant:\n{{contexts}}\n\nPlease answer the user's question based on the retrieved information."
 	}
-
+	
 	// 渲染system prompt中的{{contexts}}变量
 	renderedSystemPrompt := types.RenderPromptPlaceholders(systemPrompt, types.PlaceholderValues{
 		"contexts": contextsStr,
 		"language": detectedLang,
 	})
-
+	
 	messages := []chat.Message{
 		{Role: "system", Content: renderedSystemPrompt},
 		{Role: "user", Content: userContent},
 	}
 
-	// Enable thinking mode if supported by the model
-	thinking := true
 	chatOptions := &chat.ChatOptions{
 		Temperature:         s.cfg.Conversation.Summary.Temperature,
 		MaxCompletionTokens: s.cfg.Conversation.Summary.MaxCompletionTokens,
-		Thinking:            &thinking,
 	}
 
-	logger.Infof(ctx, "Calling LLM for streaming interpretation with model: %s, thinking enabled", modelID)
+	logger.Infof(ctx, "Calling LLM for streaming interpretation with model: %s", modelID)
 	respChan, err := chatInstance.ChatStream(ctx, messages, chatOptions)
 	if err != nil {
 		logger.Errorf(ctx, "Failed to call LLM: %v", err)
@@ -1028,6 +1150,7 @@ func (s *sessionService) KnowledgeInterpretStream(ctx context.Context,
 	// Process streaming responses
 	go func() {
 		var thinkingStarted bool
+		var answerStarted bool
 
 		for resp := range respChan {
 			select {
@@ -1038,36 +1161,42 @@ func (s *sessionService) KnowledgeInterpretStream(ctx context.Context,
 			}
 
 			content := resp.Content
-			if content == "" && !resp.Done {
+			if content == "" {
 				continue
 			}
 
-			// Use ResponseType to determine if this is thinking or answer content
-			// This is the correct WeKnora logic
-			switch resp.ResponseType {
-			case types.ResponseTypeThinking:
-				thinkingStarted = true
+			// Try to detect if this is thinking content or answer content
+			// Check for thinking indicators
+			isThinking := false
+			if !answerStarted {
+				if strings.Contains(content, "Analyze") || strings.Contains(content, "Formulate") ||
+					strings.Contains(content, "思考") || strings.Contains(content, "分析") ||
+					strings.HasPrefix(content, "<think>") {
+					isThinking = true
+					if !thinkingStarted {
+						thinkingStarted = true
+					}
+				}
+			}
+
+			// If we've started thinking and now see content that looks like answer
+			if thinkingStarted && !answerStarted && !isThinking {
+				answerStarted = true
+			}
+
+			if isThinking {
+				// Send thinking content using EventAgentThought
 				eventBus.Emit(ctx, event.Event{
 					ID:        requestID,
 					Type:      event.EventAgentThought,
 					SessionID: requestID,
 					Data: event.AgentThoughtData{
 						Content: content,
-						Done:    resp.Done,
+						Done:    false,
 					},
 				})
-			case types.ResponseTypeAnswer:
-				eventBus.Emit(ctx, event.Event{
-					ID:        requestID,
-					Type:      event.EventAgentFinalAnswer,
-					SessionID: requestID,
-					Data: event.AgentFinalAnswerData{
-						Content: content,
-						Done:    resp.Done,
-					},
-				})
-			default:
-				// For unknown response types, treat as answer
+			} else {
+				// Send answer content using EventAgentFinalAnswer
 				eventBus.Emit(ctx, event.Event{
 					ID:        requestID,
 					Type:      event.EventAgentFinalAnswer,
@@ -1080,7 +1209,7 @@ func (s *sessionService) KnowledgeInterpretStream(ctx context.Context,
 			}
 		}
 
-		// Send done event for thinking if it was started
+		// Send done event for thinking
 		if thinkingStarted {
 			eventBus.Emit(ctx, event.Event{
 				ID:        requestID,
