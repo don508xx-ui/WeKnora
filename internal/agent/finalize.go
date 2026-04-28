@@ -52,55 +52,9 @@ func (e *AgentEngine) streamFinalAnswerToEventBus(
 	for stepIdx, step := range state.RoundSteps {
 		for toolIdx, toolCall := range step.ToolCalls {
 			toolResultCount++
-
-			// Build content with tool output and document references from Data
-			content := fmt.Sprintf("Tool %s returned: %s", toolCall.Name, toolCall.Result.Output)
-
-			// Extract document references from ToolResult.Data for citation
-			if toolCall.Result != nil && toolCall.Result.Data != nil {
-				docRefs := "\n\n=== Document References for Citation ===\n"
-				hasRefs := false
-
-				// Handle knowledge_search results
-				if results, ok := toolCall.Result.Data["results"].([]interface{}); ok && len(results) > 0 {
-					for i, r := range results {
-						if resultMap, ok := r.(map[string]interface{}); ok {
-							chunkID, _ := resultMap["chunk_id"].(string)
-							knowledgeTitle, _ := resultMap["knowledge_title"].(string)
-							knowledgeID, _ := resultMap["knowledge_id"].(string)
-							if chunkID != "" && knowledgeTitle != "" {
-								docRefs += fmt.Sprintf("[%d] doc=\"%s\" chunk_id=\"%s\" (knowledge_id: %s)\n",
-									i+1, knowledgeTitle, chunkID, knowledgeID)
-								hasRefs = true
-							}
-						}
-					}
-				}
-
-				// Handle list_knowledge_chunks results
-				if chunks, ok := toolCall.Result.Data["chunks"].([]interface{}); ok && len(chunks) > 0 {
-					knowledgeTitle, _ := toolCall.Result.Data["knowledge_title"].(string)
-					for i, c := range chunks {
-						if chunkMap, ok := c.(map[string]interface{}); ok {
-							chunkID, _ := chunkMap["chunk_id"].(string)
-							knowledgeID, _ := chunkMap["knowledge_id"].(string)
-							if chunkID != "" && knowledgeTitle != "" {
-								docRefs += fmt.Sprintf("[%d] doc=\"%s\" chunk_id=\"%s\" (knowledge_id: %s)\n",
-									i+1, knowledgeTitle, chunkID, knowledgeID)
-								hasRefs = true
-							}
-						}
-					}
-				}
-
-				if hasRefs {
-					content += docRefs
-				}
-			}
-
 			messages = append(messages, chat.Message{
 				Role:    "user",
-				Content: content,
+				Content: fmt.Sprintf("Tool %s returned: %s", toolCall.Name, toolCall.Result.Output),
 			})
 			logger.Debugf(ctx, "[Agent][FinalAnswer] Added tool result [Step-%d][Tool-%d]: %s (output: %d chars)",
 				stepIdx+1, toolIdx+1, toolCall.Name, len(toolCall.Result.Output))
@@ -115,28 +69,14 @@ func (e *AgentEngine) streamFinalAnswerToEventBus(
 
 User question: %s
 
-CRITICAL REQUIREMENTS:
-1. Answer MUST be based on the actually retrieved content from the tool results above
-2. EVERY FACTUAL CLAIM MUST include a citation using <kb doc="..." chunk_id="..." /> format
-   - Use the EXACT doc name and chunk_id from the "Document References for Citation" section above
-   - The citation tag must be placed ON THE SAME LINE as the last sentence of the paragraph it supports, NO LINE BREAK before it
-   - One citation per paragraph per source is enough
-   - NEVER group all citations at the bottom, distribute them inline throughout
-   - CORRECT: 太阳星座代表一个人的外在形象。<kb doc="占星基础" chunk_id="123" />
-   - WRONG (missing citation): 太阳星座代表一个人的外在形象。
-   - WRONG (line break): 
-     太阳星座代表一个人的外在形象。
-     <kb doc="占星基础" chunk_id="123" />
-   - WRONG (using brackets): 太阳星座代表一个人的外在形象。[1] or {1}
-   - WRONG (using book name only): 太阳星座代表一个人的外在形象。(占星基础)
+Requirements:
+1. Answer based on the actually retrieved content
+2. Clearly cite information sources (chunk_id, document name)
 3. Organize the answer in a structured format
 4. If information is insufficient, honestly state so
 5. IMPORTANT: Respond in the same language as the user's question
 
-MANDATORY: You MUST include <kb doc="..." chunk_id="..." /> citations for every piece of information from the knowledge base. This is NOT optional.
-DO NOT use [1], {1}, or any other citation format. ONLY use <kb doc="..." chunk_id="..." /> format.
-
-Now generate the final answer with proper citations:`, query)
+Now generate the final answer:`, query)
 
 	messages = append(messages, chat.Message{
 		Role:    "user",
