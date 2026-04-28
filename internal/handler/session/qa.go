@@ -718,20 +718,38 @@ func (h *Handler) KnowledgeInterpret(c *gin.Context) {
 		request.Stream,
 	)
 
+	// Use Agent mode for knowledge interpretation (1:1 replicate WeKnora local behavior)
+	// Create a QA request and delegate to KnowledgeQA (which uses Agent mode)
+	reqCtx := &qaRequestContext{
+		ctx:     ctx,
+		c:       c,
+		session: &types.Session{}, // Create a minimal session
+		query:   request.Query,
+		requestID: fmt.Sprintf("interpret-%d", time.Now().UnixNano()),
+		knowledgeBaseIDs: request.KnowledgeBaseIDs,
+		knowledgeIDs:     request.KnowledgeIDs,
+		mentionedItems:   nil,
+		images:           nil,
+		channel:          "web",
+	}
+
+	// Build QA request
+	qaReq := &types.QARequest{
+		Session:          reqCtx.session,
+		Query:            request.Query,
+		KnowledgeBaseIDs: request.KnowledgeBaseIDs,
+		KnowledgeIDs:     request.KnowledgeIDs,
+		WebSearchEnabled: false,
+		ModelID:          request.ModelID,
+	}
+
 	// Check if streaming is requested
 	if request.Stream {
-		h.knowledgeInterpretStream(c, ctx, &request)
+		// Streaming: use Agent mode with event handling
+		h.knowledgeInterpretAgentStream(c, ctx, request, qaReq, reqCtx)
 	} else {
-		// Non-streaming version (keep backward compatibility)
-		result, err := h.sessionService.KnowledgeInterpret(ctx, request.KnowledgeBaseIDs, request.KnowledgeIDs, request.Query, request.ModelID)
-		if err != nil {
-			logger.ErrorWithFields(ctx, err, nil)
-			c.Error(errors.NewInternalServerError(err.Error()))
-			return
-		}
-
-		logger.Infof(ctx, "Knowledge interpret completed")
-		c.JSON(http.StatusOK, result)
+		// Non-streaming: use Agent mode
+		h.knowledgeInterpretAgent(c, ctx, request, qaReq, reqCtx)
 	}
 }
 
@@ -901,4 +919,160 @@ func setupStopEventHandlerSimple(eventBus *event.EventBus, cancel context.Cancel
 		cancel()
 		return nil
 	})
+}
+
+// knowledgeInterpretAgent handles non-streaming knowledge interpretation using Agent mode
+func (h *Handler) knowledgeInterpretAgent(c *gin.Context, ctx context.Context, request KnowledgeInterpretRequest, qaReq *types.QARequest, reqCtx *qaRequestContext) {
+	// Setup SSE stream (even for non-streaming, we use event bus internally)
+	streamCtx := h.setupSSEStream(reqCtx, false)
+
+	var answerContent string
+	var sources []types.KnowledgeInterpretSource
+
+	// Register event handlers
+	streamCtx.eventBus.On(event.EventAgentFinalAnswer, func(eventCtx context.Context, evt event.Event) error {
+		data, ok := evt.Data.(event.AgentFinalAnswerData)
+		if !ok {
+			return nil
+		}
+		answerContent += data.Content
+		return nil
+	})
+
+	streamCtx.eventBus.On(event.EventAgentComplete, func(eventCtx context.Context, evt event.Event) error {
+		data, ok := evt.Data.(event.AgentCompleteData)
+		if !ok {
+			return nil
+		}
+		// Extract sources from the final answer if available
+		// For now, return empty sources
+		return nil
+	})
+
+	// Execute in goroutine
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				logger.Errorf(streamCtx.asyncCtx, "Knowledge interpret agent panicked: %v", r)
+			}
+		}()
+
+		// Call KnowledgeQA which uses Agent mode
+		err := h.sessionService.KnowledgeQA(streamCtx.asyncCtx, qaReq, streamCtx.eventBus)
+		if err != nil {
+			logger.ErrorWithFields(streamCtx.asyncCtx, err, nil)
+			streamCtx.eventBus.Emit(streamCtx.asyncCtx, event.Event{
+				Type:      event.EventError,
+				SessionID: reqCtx.session.ID,
+				Data:      event.ErrorData{Error: err.Error()},
+			})
+		}
+	}()
+
+	// Handle events (blocking)
+	h.handleAgentEventsForSSE(ctx, c, reqCtx.session.ID, "", reqCtx.requestID, streamCtx.eventBus, false)
+
+	// Return the answer
+	c.JSON(http.StatusOK, types.KnowledgeInterpretResponse{
+		Answer:  answerContent,
+		Sources: sources,
+		Model:   request.ModelID,
+		Success: true,
+	})
+}
+
+// knowledgeInterpretAgentStream handles streaming knowledge interpretation using Agent mode
+func (h *Handler) knowledgeInterpretAgentStream(c *gin.Context, ctx context.Context, request KnowledgeInterpretRequest, qaReq *types.QARequest, reqCtx *qaRequestContext) {
+	// Setup SSE stream
+	streamCtx := h.setupSSEStream(reqCtx, false)
+
+	// Set SSE headers
+	setSSEHeaders(c)
+
+	// Function to send SSE event
+	sendEvent := func(eventType string, content string, done bool) {
+		response := &types.StreamResponse{
+			ID:           reqCtx.requestID,
+			ResponseType: types.ResponseType(eventType),
+			Content:      content,
+			Done:         done,
+		}
+		c.SSEvent("message", response)
+		c.Writer.Flush()
+	}
+
+	// Subscribe to thinking events
+	streamCtx.eventBus.On(event.EventAgentThought, func(eventCtx context.Context, evt event.Event) error {
+		data, ok := evt.Data.(event.AgentThoughtData)
+		if !ok {
+			return nil
+		}
+		sendEvent("thinking", data.Content, data.Done)
+		return nil
+	})
+
+	// Subscribe to tool call events
+	streamCtx.eventBus.On(event.EventAgentToolCall, func(eventCtx context.Context, evt event.Event) error {
+		data, ok := evt.Data.(event.AgentToolCallData)
+		if !ok {
+			return nil
+		}
+		toolCallJSON, _ := json.Marshal(data)
+		sendEvent("tool_call", string(toolCallJSON), false)
+		return nil
+	})
+
+	// Subscribe to tool result events
+	streamCtx.eventBus.On(event.EventAgentToolResult, func(eventCtx context.Context, evt event.Event) error {
+		data, ok := evt.Data.(event.AgentToolResultData)
+		if !ok {
+			return nil
+		}
+		toolResultJSON, _ := json.Marshal(data)
+		sendEvent("tool_result", string(toolResultJSON), false)
+		return nil
+	})
+
+	// Subscribe to final answer events
+	streamCtx.eventBus.On(event.EventAgentFinalAnswer, func(eventCtx context.Context, evt event.Event) error {
+		data, ok := evt.Data.(event.AgentFinalAnswerData)
+		if !ok {
+			return nil
+		}
+		sendEvent("answer", data.Content, data.Done)
+		return nil
+	})
+
+	// Subscribe to error events
+	streamCtx.eventBus.On(event.EventError, func(eventCtx context.Context, evt event.Event) error {
+		data, ok := evt.Data.(event.ErrorData)
+		if !ok {
+			return nil
+		}
+		sendEvent("error", data.Error, true)
+		return nil
+	})
+
+	// Execute in goroutine
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				logger.Errorf(streamCtx.asyncCtx, "Knowledge interpret agent stream panicked: %v", r)
+			}
+		}()
+
+		// Call KnowledgeQA which uses Agent mode
+		err := h.sessionService.KnowledgeQA(streamCtx.asyncCtx, qaReq, streamCtx.eventBus)
+		if err != nil {
+			logger.ErrorWithFields(streamCtx.asyncCtx, err, nil)
+			streamCtx.eventBus.Emit(streamCtx.asyncCtx, event.Event{
+				Type:      event.EventError,
+				SessionID: reqCtx.session.ID,
+				Data:      event.ErrorData{Error: err.Error()},
+			})
+		}
+	}()
+
+	// Handle events (blocking)
+	h.handleAgentEventsForSSE(ctx, c, reqCtx.session.ID, "", reqCtx.requestID, streamCtx.eventBus, false)
 }
