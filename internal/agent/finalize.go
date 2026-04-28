@@ -46,16 +46,29 @@ func (e *AgentEngine) streamFinalAnswerToEventBus(
 		{Role: "system", Content: systemPrompt},
 		{Role: "user", Content: query},
 	}
+	// DEBUG: Log the system prompt to verify citation requirements
+	promptPreview := systemPrompt
+	if len(systemPrompt) > 500 {
+		promptPreview = systemPrompt[:500]
+	}
+	logger.Infof(ctx, "[DEBUG][Finalize] System prompt (first 500 chars): %s", promptPreview)
 
 	// Add all tool call results as context
 	toolResultCount := 0
 	for stepIdx, step := range state.RoundSteps {
 		for toolIdx, toolCall := range step.ToolCalls {
 			toolResultCount++
+			toolContent := fmt.Sprintf("Tool %s returned: %s", toolCall.Name, toolCall.Result.Output)
 			messages = append(messages, chat.Message{
 				Role:    "user",
-				Content: fmt.Sprintf("Tool %s returned: %s", toolCall.Name, toolCall.Result.Output),
+				Content: toolContent,
 			})
+			// DEBUG: Log tool output to verify chunk_id presence
+			outputPreview := toolCall.Result.Output
+			if len(outputPreview) > 300 {
+				outputPreview = outputPreview[:300]
+			}
+			logger.Infof(ctx, "[DEBUG][Finalize] Tool %s output (first 300 chars): %s", toolCall.Name, outputPreview)
 			logger.Debugf(ctx, "[Agent][FinalAnswer] Added tool result [Step-%d][Tool-%d]: %s (output: %d chars)",
 				stepIdx+1, toolIdx+1, toolCall.Name, len(toolCall.Result.Output))
 		}
