@@ -733,23 +733,12 @@ func (h *Handler) KnowledgeInterpret(c *gin.Context) {
 		channel:          "web",
 	}
 
-	// Build CreateKnowledgeQARequest like AgentQA does
-	qaRequest := &CreateKnowledgeQARequest{
-		Query:            request.Query,
-		KnowledgeBaseIDs: request.KnowledgeBaseIDs,
-		KnowledgeIds:     request.KnowledgeIDs,
-		AgentEnabled:     true, // FORCE Agent mode
-		WebSearchEnabled: false,
-		DisableTitle:     true,
-	}
-
 	// Resolve custom agent (nil for knowledge interpret - use default)
 	reqCtx.customAgent = nil
 
 	logger.Infof(ctx, "Knowledge interpret using Agent mode, session ID: %s", sessionID)
 
-	// DIRECT COPY from AgentQA: Route to appropriate handler based on agent mode
-	agentModeEnabled := true // FORCE Agent mode
+	// DIRECT COPY from AgentQA: Always use Agent mode
 	h.executeQA(reqCtx, qaModeAgent, false)
 	// 1:1 COPY from AgentQA - END
 }

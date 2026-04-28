@@ -474,8 +474,8 @@ const sendMsg = async (value, modelId = '', mentionedItems = [], imageFiles = []
     // Get selected agent ID (backend resolves shared agent and its tenant from share relation)
     const selectedAgentId = useSettingsStoreInstance.selectedAgentId || '';
 
-    // Use agent-chat endpoint when agent is enabled, otherwise use knowledge-chat
-    const endpoint = agentEnabled ? '/api/v1/agent-chat' : '/api/v1/knowledge-chat';
+    // Always use agent-chat endpoint for Agent mode with full thinking process
+    const endpoint = '/api/v1/agent-chat';
     
     // Get selected MCP services from settings store (if available)
     const mcpServiceIds = useSettingsStoreInstance.settings.selectedMCPServices || [];

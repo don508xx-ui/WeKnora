@@ -63,12 +63,8 @@ export function useStream() {
       }
     }
 
-    // Validate knowledge_base_ids for agent-chat requests
-    // Note: knowledge_base_ids can be empty if user hasn't selected any, but we allow it
-    // The backend will handle the case when no knowledge bases are selected
-    const isAgentChat = params.url === '/api/v1/agent-chat';
-    // Removed validation - allow empty knowledge_base_ids array
-    // The backend should handle this case appropriately
+    // Always use agent-chat endpoint - RAG mode removed
+    // All requests go through Agent mode with full thinking process
 
     try {
       let url =
