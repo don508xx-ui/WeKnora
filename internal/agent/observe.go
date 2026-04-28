@@ -122,30 +122,17 @@ func (e *AgentEngine) analyzeResponse(
 						iteration+1, err)
 				} else {
 					logger.Infof(ctx, "[Agent][Round-%d] final_answer tool: answer=%d chars, duration=%dms",
-					iteration+1, len(faArgs.Answer), time.Since(roundStart).Milliseconds())
+						iteration+1, len(faArgs.Answer), time.Since(roundStart).Milliseconds())
 
-				// Emit the actual answer content before sending Done
-				answerID := generateEventID("answer")
-				if faArgs.Answer != "" {
 					e.eventBus.Emit(ctx, event.Event{
-						ID:        answerID,
+						ID:        generateEventID("answer-done"),
 						Type:      event.EventAgentFinalAnswer,
 						SessionID: sessionID,
 						Data: event.AgentFinalAnswerData{
-							Content: faArgs.Answer,
-							Done:    false,
+							Content: "",
+							Done:    true,
 						},
 					})
-				}
-				e.eventBus.Emit(ctx, event.Event{
-					ID:        answerID,
-					Type:      event.EventAgentFinalAnswer,
-					SessionID: sessionID,
-					Data: event.AgentFinalAnswerData{
-						Content: "",
-						Done:    true,
-					},
-				})
 					common.PipelineInfo(ctx, "Agent", "final_answer_tool", map[string]interface{}{
 						"iteration":  iteration,
 						"round":      iteration + 1,
