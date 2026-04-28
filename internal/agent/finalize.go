@@ -116,6 +116,8 @@ Now generate the final answer:`, query)
 	}
 
 	fullAnswer := llmResult.Content
+	// DEBUG: Log the actual full answer to check if citations are present
+	logger.Infof(ctx, "[DEBUG][FinalAnswer] Full answer content: %q", fullAnswer)
 	logger.Infof(ctx, "[Agent][FinalAnswer] Final answer generated: %d characters", len(fullAnswer))
 	common.PipelineInfo(ctx, "Agent", "final_answer_done", map[string]interface{}{
 		"session_id": sessionID,

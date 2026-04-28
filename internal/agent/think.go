@@ -147,6 +147,8 @@ func (e *AgentEngine) streamThinkingToEventBus(
 			if chunk.ResponseType == types.ResponseTypeAnswer {
 				if source, _ := chunk.Data["source"].(string); source == "final_answer_tool" {
 					emittedEventTypes["final_answer_chunk"]++
+					// DEBUG: Log the actual content to check if citations are present
+					logger.Infof(ctx, "[DEBUG][final_answer_tool] Chunk content: %q", chunk.Content)
 					e.eventBus.Emit(ctx, event.Event{
 						ID:        answerID,
 						Type:      event.EventAgentFinalAnswer,

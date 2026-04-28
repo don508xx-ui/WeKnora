@@ -118,21 +118,23 @@ func (e *AgentEngine) analyzeResponse(
 					Answer string `json:"answer"`
 				}
 				if err := json.Unmarshal([]byte(tc.Function.Arguments), &faArgs); err != nil {
-					logger.Warnf(ctx, "[Agent][Round-%d] Failed to parse final_answer args: %v",
-						iteration+1, err)
-				} else {
-					logger.Infof(ctx, "[Agent][Round-%d] final_answer tool: answer=%d chars, duration=%dms",
-						iteration+1, len(faArgs.Answer), time.Since(roundStart).Milliseconds())
+				logger.Warnf(ctx, "[Agent][Round-%d] Failed to parse final_answer args: %v",
+					iteration+1, err)
+			} else {
+				logger.Infof(ctx, "[Agent][Round-%d] final_answer tool: answer=%d chars, duration=%dms",
+					iteration+1, len(faArgs.Answer), time.Since(roundStart).Milliseconds())
+				// DEBUG: Log the actual answer from final_answer tool to check if citations are present
+				logger.Infof(ctx, "[DEBUG][final_answer_tool] Answer content: %q", faArgs.Answer)
 
-					e.eventBus.Emit(ctx, event.Event{
-						ID:        generateEventID("answer-done"),
-						Type:      event.EventAgentFinalAnswer,
-						SessionID: sessionID,
-						Data: event.AgentFinalAnswerData{
-							Content: "",
-							Done:    true,
-						},
-					})
+				e.eventBus.Emit(ctx, event.Event{
+					ID:        generateEventID("answer-done"),
+					Type:      event.EventAgentFinalAnswer,
+					SessionID: sessionID,
+					Data: event.AgentFinalAnswerData{
+						Content: "",
+						Done:    true,
+					},
+				})
 					common.PipelineInfo(ctx, "Agent", "final_answer_tool", map[string]interface{}{
 						"iteration":  iteration,
 						"round":      iteration + 1,
