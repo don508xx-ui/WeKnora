@@ -109,14 +109,14 @@ func NewRouter(params RouterParams) *gin.Engine {
 	// IM 回调路由（在认证中间件之前注册，使用各平台自身的签名验证）
 	RegisterIMRoutes(r, params.IMHandler)
 
-	// 认证相关路由（不需要认证）
+	// 认证中间件（必须在 auth 路由之前注册，使 /auth/me 等需要认证的端点受保护）
+	r.Use(middleware.Auth(params.TenantService, params.UserService, params.Config))
+
+	// 认证相关路由（公开端点在 Auth 中间件内的 noAuthAPI 白名单中跳过认证）
 	auth := r.Group("/api/v1")
 	{
 		RegisterAuthRoutes(auth, params.AuthHandler)
 	}
-
-	// 认证中间件
-	r.Use(middleware.Auth(params.TenantService, params.UserService, params.Config))
 
 	// 知识解读接口（需要认证）
 	knowledgeInterpret := r.Group("/api/v1/knowledge-interpret")

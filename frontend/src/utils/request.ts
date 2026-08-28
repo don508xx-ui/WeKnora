@@ -225,7 +225,6 @@ export async function getDown(url: string) {
 export function postUpload(url: string, data = {}, onUploadProgress?: (progressEvent: any) => void) {
   return instance.post(url, data, {
     headers: {
-      "Content-Type": "multipart/form-data",
       "X-Request-ID": `${generateRandomString(12)}`,
     },
     onUploadProgress,

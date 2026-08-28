@@ -25,6 +25,8 @@ var noAuthAPI = map[string][]string{
 	"/api/v1/auth/oidc/url":      {"GET"},
 	"/api/v1/auth/oidc/callback": {"GET"},
 	"/api/v1/auth/refresh":       {"POST"},
+	"/api/v1/im/callback/*":      {"GET", "POST"}, // IM平台回调，使用各自签名验证
+	"/swagger/*":                  {"GET"},          // Swagger文档（仅非生产环境）
 }
 
 // 检查请求是否在无需认证的API列表中
