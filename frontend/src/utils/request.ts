@@ -192,21 +192,35 @@ instance.interceptors.response.use(
     // 后端返回格式: { success: false, error: { code, message, details } }
     // 提取 error.message 作为顶层 message，方便前端使用 error?.message 获取
     let errorMessage: string | undefined;
-    if (typeof data === 'object') {
-      if (typeof data?.error === 'string') {
-        errorMessage = data.error;
-      } else if (data?.error?.message) {
-        errorMessage = data.error.message;
-      } else {
-        errorMessage = data?.message;
+    let parsedData: any = data;
+
+    // 如果是 blob 响应（如文件下载/预览的错误），需要异步读取并解析 JSON
+    if (data instanceof Blob) {
+      try {
+        const text = await data.text();
+        if (text) {
+          parsedData = JSON.parse(text);
+        }
+      } catch {
+        // blob 不是 JSON，保持原样
       }
-    } else if (typeof data === 'string') {
-      errorMessage = data;
+    }
+
+    if (typeof parsedData === 'object' && parsedData !== null) {
+      if (typeof parsedData?.error === 'string') {
+        errorMessage = parsedData.error;
+      } else if (parsedData?.error?.message) {
+        errorMessage = parsedData.error.message;
+      } else {
+        errorMessage = parsedData?.message;
+      }
+    } else if (typeof parsedData === 'string') {
+      errorMessage = parsedData;
     }
     return Promise.reject({ 
       status, 
       message: errorMessage,
-      ...(typeof data === 'object' ? data : {}) 
+      ...(typeof parsedData === 'object' && parsedData !== null ? parsedData : {}) 
     });
   }
 );
