@@ -68,7 +68,6 @@ type RouterParams struct {
 func NewRouter(params RouterParams) *gin.Engine {
 	r := gin.New()
 	r.ContextWithFallback = true
-	r.MaxMultipartMemory = 500 << 20 // 500MB, configurable via MAX_FILE_SIZE_MB env var later
 
 	// CORS 中间件应放在最前面
 	r.Use(cors.New(cors.Config{
