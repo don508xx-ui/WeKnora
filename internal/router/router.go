@@ -677,7 +677,7 @@ func serveFrontendStatic(r *gin.Engine) {
 			return
 		}
 		path := c.Request.URL.Path
-		if strings.HasPrefix(path, "/api/") || strings.HasPrefix(path, "/health") || strings.HasPrefix(path, "/swagger/") {
+		if strings.HasPrefix(path, "/api/") || strings.HasPrefix(path, "/health") || strings.HasPrefix(path, "/swagger/") || strings.HasPrefix(path, "/files") {
 			c.Next()
 			return
 		}
