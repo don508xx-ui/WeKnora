@@ -13,7 +13,7 @@ const BASE_URL = "";
 // 创建Axios实例
 const instance = axios.create({
   baseURL: BASE_URL, // 使用配置的API基础URL
-  timeout: 30000, // 请求超时时间
+  timeout: 600000, // 请求超时时间 10分钟，大文件上传需要足够时间
   headers: {
     "Content-Type": "application/json",
     "X-Request-ID": `${generateRandomString(12)}`,
