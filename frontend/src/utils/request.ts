@@ -243,6 +243,7 @@ export function postUpload(url: string, data = {}, onUploadProgress?: (progressE
       "X-Request-ID": `${generateRandomString(12)}`,
     },
     onUploadProgress,
+    timeout: 600000, // 10分钟，大文件上传需要足够时间
   });
 }
 
